@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, Union
 
 import numpy as np
 
-from .agent import DifferentialSarsaTIDBD
+from .algo import create_agent
 from .checkpoint import load_checkpoint, save_checkpoint
 from .config import AppConfig
 from .environment import ACTION_NAMES, ContinualWindyGridWorld
@@ -26,7 +26,7 @@ class Trainer:
         self.run_id = run_id or datetime.now().strftime("%Y%m%d-%H%M%S")
         self.environment = ContinualWindyGridWorld(config.environment)
         self.coder = DualTileCoder(config.environment, config.agent)
-        self.agent = DifferentialSarsaTIDBD(self.coder, config.agent, seed=config.environment.seed + 1)
+        self.agent = create_agent(self.coder, config.agent, seed=config.environment.seed + 1)
         self.metrics = MetricsTracker(
             config.training.metric_window,
             config.training.chart_points,
@@ -87,9 +87,10 @@ class Trainer:
         with self.state_lock:
             summary = self.metrics.summary(self.step_count)
             summary.update(self.agent.step_size_summary())
+            frozen_policy = self.agent.freeze_policy_matrix(
+                self.environment.width, self.environment.height, self.environment.goal
+            )
             policies = []
-            previous_action = self.environment.previous_action
-            gx, gy = self.environment.goal
             obstacles = self.environment.active_obstacles
             for y in range(self.environment.height):
                 row = []
@@ -97,8 +98,7 @@ class Trainer:
                     if (x, y) in obstacles:
                         row.append(None)
                     else:
-                        observation = (x, y, gx, gy, previous_action)
-                        row.append(self.agent.action_probabilities(observation).tolist())
+                        row.append(frozen_policy[y, x].tolist())
                 policies.append(row)
             summary.update(
                 {
@@ -117,6 +117,8 @@ class Trainer:
                 "next_action": ACTION_NAMES[self.current_action],
                 "events": list(self.environment.last_events),
                 "manual_wind_direction": self.environment.config.manual_wind_direction,
+                "w_strength": self.environment.config.w_strength,
+                "algorithm": self.config.agent.algorithm,
                 "policy_probabilities": policies,
                 "curves": self.metrics.curves(),
                 "iht_used": len(self.coder.iht.dictionary),
@@ -140,7 +142,7 @@ class Trainer:
             if environment_config is not None:
                 for name in (
                     "profile", "num_contexts", "reward_goal", "reward_collision", "reward_step",
-                    "max_wind_strength", "wind_period", "target_move_interval", "context_switch_interval",
+                    "w_strength", "wind_period", "target_move_interval", "context_switch_interval",
                 ):
                     setattr(self.environment.config, name, getattr(environment_config, name))
             self.environment.apply_manual_configuration(
@@ -149,15 +151,15 @@ class Trainer:
             self.current_observation = self.environment.observation()
             return self.snapshot()
 
-    def apply_wind(self, direction: str, strength: int) -> Dict[str, Any]:
+    def apply_wind(self, direction: str, strength: float) -> Dict[str, Any]:
         """Change wind atomically without moving the agent or altering the map."""
         if direction not in ("auto", "up", "right", "down", "left", "none"):
             raise ValueError("Unknown wind direction: %s" % direction)
-        if int(strength) < 0:
-            raise ValueError("Max wind strength cannot be negative.")
+        if not 0.0 <= float(strength) <= 1.0:
+            raise ValueError("Wind strength must lie in [0, 1].")
         with self.state_lock:
             self.environment.config.manual_wind_direction = direction
-            self.environment.config.max_wind_strength = int(strength)
+            self.environment.config.w_strength = float(strength)
             self.environment.last_events = ["manual_wind_update"]
             return self.snapshot()
 
@@ -192,7 +194,9 @@ class Trainer:
         state = load_checkpoint(path)
         config = AppConfig.from_dict(state["config"])
         trainer = cls(config, base_dir=base_dir, run_id=state["run_id"])
-        if state.get("compatibility") != trainer._compatibility_signature():
+        saved_compatibility = dict(state.get("compatibility", {}))
+        saved_compatibility.setdefault("algorithm", config.agent.algorithm)
+        if saved_compatibility != trainer._compatibility_signature():
             raise ValueError("Checkpoint feature or action configuration is incompatible.")
         trainer.environment.load_state_dict(state["environment"])
         trainer.agent.load_state_dict(state["agent"])
@@ -214,6 +218,7 @@ class Trainer:
             "num_tilings": self.config.agent.num_tilings,
             "tiles_per_dimension": self.config.agent.tiles_per_dimension,
             "iht_size": self.config.agent.iht_size,
+            "algorithm": self.config.agent.algorithm,
             "feature_groups": ["absolute_position", "relative_goal", "categorical_bias"],
         }
 

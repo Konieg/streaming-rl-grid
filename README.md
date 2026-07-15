@@ -163,4 +163,17 @@ checkpoint 不只保存 `w`，还保存：
 python -m unittest discover -s tests -v
 ```
 
+## Algorithm and environment configuration
+
+Algorithms share the interface in `stream_rl_grid/algo/base.py` and are selected with
+`AgentConfig.algorithm` (`"tidbd"` or `"sarsa"`). The GUI exposes the same selector.
+The policy shown by the GUI is a frozen `(height, width, 5)` epsilon-greedy probability
+matrix built from the current learned parameters; it is separate from the action sampled
+by the online behavior loop.
+
+Default maps can be authored directly in `EnvironmentConfig` with
+`obstacle_coordinates`, `start_position`, and `goal_position`. Wind is probabilistic:
+`w_strength=0.3` means a 30% chance of one additional cell of displacement in the selected
+wind direction on each transition.
+
 测试覆盖 continuing 目标传送、碰撞回退、`stay` 的风效应、地图切换延迟障碍物、TIDBD 数值有限性，以及 checkpoint 后逐状态/逐动作/逐权重的精确续训。

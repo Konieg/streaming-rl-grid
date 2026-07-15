@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from .config import AppConfig, PROFILES
+from .config import ALGORITHMS, AppConfig, PROFILES
 from .trainer import Trainer
 
 
@@ -16,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=int, default=10)
     parser.add_argument("--height", type=int, default=7)
     parser.add_argument("--obstacles", type=int, default=8)
+    parser.add_argument("--algorithm", choices=ALGORITHMS, default="tidbd")
     parser.add_argument("--fixed-alpha", action="store_true", help="Disable TIDBD baseline")
     parser.add_argument("--report-every", type=int, default=1_000)
     return parser
@@ -34,7 +35,9 @@ def main() -> None:
         config.environment.width = args.width
         config.environment.height = args.height
         config.environment.obstacle_count = args.obstacles
-        config.agent.use_tidbd = not args.fixed_alpha
+        config.environment.obstacle_coordinates = None
+        config.agent.algorithm = "sarsa" if args.fixed_alpha else args.algorithm
+        config.agent.use_tidbd = config.agent.algorithm == "tidbd"
         trainer = Trainer(config, base_dir=base_dir)
 
     target = None if args.steps == 0 else trainer.step_count + args.steps

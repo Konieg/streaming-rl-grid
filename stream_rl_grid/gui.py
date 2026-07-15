@@ -12,7 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-from .config import AgentConfig, AppConfig, EnvironmentConfig, PROFILES, TrainingConfig, WIND_CHOICES
+from .config import ALGORITHMS, AgentConfig, AppConfig, EnvironmentConfig, PROFILES, TrainingConfig, WIND_CHOICES
 from .environment import ContinualWindyGridWorld
 from .trainer import Trainer
 
@@ -23,7 +23,7 @@ Coord = Tuple[int, int]
 class TrainingPanel:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Streaming Differential Sarsa + TIDBD - Continual Windy Grid")
+        self.root.title("Streaming RL Algorithms - Continual Windy Grid")
         self.root.geometry("1450x880")
         self.base_dir = Path(__file__).resolve().parents[1]
         self.trainer: Optional[Trainer] = None
@@ -42,7 +42,7 @@ class TrainingPanel:
         self.metric_labels: Dict[str, ttk.Label] = {}
         self._build_layout()
         self._set_defaults(AppConfig())
-        self.generate_preview()
+        self.generate_preview(use_configured_coordinates=True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(100, self._poll_messages)
 
@@ -70,12 +70,12 @@ class TrainingPanel:
         self._add_entry(env_tab, "Start (x,y)", "start_position", 5)
         self._add_entry(env_tab, "Goal (x,y)", "goal_position", 6)
         self._add_combo(env_tab, "Wind direction", "manual_wind_direction", WIND_CHOICES, 7)
-        self._add_entry(env_tab, "Context maps", "num_contexts", 8)
-        self._add_entry(env_tab, "Seed", "seed", 9)
-        self._add_entry(env_tab, "Goal reward", "reward_goal", 10)
-        self._add_entry(env_tab, "Collision reward", "reward_collision", 11)
-        self._add_entry(env_tab, "Step reward", "reward_step", 12)
-        self._add_entry(env_tab, "Max wind strength", "max_wind_strength", 13)
+        self._add_entry(env_tab, "Wind strength (0-1)", "w_strength", 8)
+        self._add_entry(env_tab, "Context maps", "num_contexts", 9)
+        self._add_entry(env_tab, "Seed", "seed", 10)
+        self._add_entry(env_tab, "Goal reward", "reward_goal", 11)
+        self._add_entry(env_tab, "Collision reward", "reward_collision", 12)
+        self._add_entry(env_tab, "Step reward", "reward_step", 13)
         self._add_entry(env_tab, "Wind/reward period", "wind_period", 14)
         self._add_entry(env_tab, "Goal move interval", "target_move_interval", 15)
         self._add_entry(env_tab, "Context switch interval", "context_switch_interval", 16)
@@ -85,21 +85,17 @@ class TrainingPanel:
         ttk.Button(preview_row, text="Prev map", command=lambda: self._change_preview_context(-1)).pack(side=tk.LEFT, padx=3)
         ttk.Button(preview_row, text="Next map", command=lambda: self._change_preview_context(1)).pack(side=tk.LEFT)
 
-        self._add_entry(agent_tab, "Number of tilings / group", "num_tilings", 0)
-        self._add_entry(agent_tab, "Tiles per dimension", "tiles_per_dimension", 1)
-        self._add_entry(agent_tab, "IHT size", "iht_size", 2)
-        self._add_entry(agent_tab, "Lambda", "lambda_", 3)
-        self._add_entry(agent_tab, "Epsilon", "epsilon", 4)
-        self._add_entry(agent_tab, "TIDBD theta", "theta", 5)
-        self._add_entry(agent_tab, "Initial effective step", "effective_initial_step", 6)
-        self._add_entry(agent_tab, "Reward-rate step", "reward_rate_step", 7)
-        self._add_entry(agent_tab, "Beta minimum", "beta_min", 8)
-        self._add_entry(agent_tab, "Beta maximum", "beta_max", 9)
-        tidbd = tk.BooleanVar(value=True)
-        self.variables["use_tidbd"] = tidbd
-        ttk.Checkbutton(agent_tab, text="Use TIDBD (off = fixed-step baseline)", variable=tidbd).grid(
-            row=10, column=0, columnspan=2, sticky="w", padx=6, pady=8
-        )
+        self._add_combo(agent_tab, "Algorithm", "algorithm", ALGORITHMS, 0)
+        self._add_entry(agent_tab, "Number of tilings / group", "num_tilings", 1)
+        self._add_entry(agent_tab, "Tiles per dimension", "tiles_per_dimension", 2)
+        self._add_entry(agent_tab, "IHT size", "iht_size", 3)
+        self._add_entry(agent_tab, "Lambda", "lambda_", 4)
+        self._add_entry(agent_tab, "Epsilon", "epsilon", 5)
+        self._add_entry(agent_tab, "TIDBD theta", "theta", 6)
+        self._add_entry(agent_tab, "Initial effective step", "effective_initial_step", 7)
+        self._add_entry(agent_tab, "Reward-rate step", "reward_rate_step", 8)
+        self._add_entry(agent_tab, "Beta minimum", "beta_min", 9)
+        self._add_entry(agent_tab, "Beta maximum", "beta_max", 10)
 
         self._add_entry(run_tab, "Metric window", "metric_window", 0)
         self._add_entry(run_tab, "Chart points", "chart_points", 1)
@@ -146,10 +142,10 @@ class TrainingPanel:
             ("step", "Step"), ("average_reward", "Window avg reward"),
             ("reward_rate", "Estimated reward rate"), ("goals_per_1000_steps", "Goals / 1000"),
             ("collision_rate", "Collision rate"), ("abs_td_error", "Mean |TD error|"),
-            ("alpha_mean", "Mean TIDBD alpha"), ("alpha_max", "Max TIDBD alpha"),
+            ("alpha_mean", "Mean step size"), ("alpha_max", "Max step size"),
             ("iht_used", "IHT used"), ("iht_collisions", "IHT collisions"),
             ("context_index", "Hidden context (log)"), ("wind_phase", "Wind phase (log)"),
-            ("next_action", "Next action"),
+            ("algorithm", "Algorithm"), ("next_action", "Next action"),
         ]
         for row, (key, label) in enumerate(metric_names):
             ttk.Label(metric_frame, text=label + ":").grid(row=row, column=0, sticky="w", padx=5, pady=2)
@@ -186,6 +182,16 @@ class TrainingPanel:
         for key, variable in self.variables.items():
             if key in values:
                 variable.set("" if values[key] is None else values[key])
+        maps = config.environment.context_maps or (
+            [config.environment.obstacle_coordinates] if config.environment.obstacle_coordinates else []
+        )
+        if maps:
+            self.preview_maps = [{tuple(point) for point in layout} for layout in maps]
+            self.variables["obstacle_coordinates"].set(self._format_obstacles(self.preview_maps[0]))
+        if config.environment.start_position is not None:
+            self.variables["start_position"].set(self._format_coordinate(tuple(config.environment.start_position)))
+        if config.environment.goal_position is not None:
+            self.variables["goal_position"].set(self._format_coordinate(tuple(config.environment.goal_position)))
 
     @staticmethod
     def _parse_coordinate(text: str, label: str) -> Optional[Coord]:
@@ -230,7 +236,7 @@ class TrainingPanel:
             seed=int(self.variables["seed"].get()), reward_goal=float(self.variables["reward_goal"].get()),
             reward_collision=float(self.variables["reward_collision"].get()),
             reward_step=float(self.variables["reward_step"].get()),
-            max_wind_strength=int(self.variables["max_wind_strength"].get()),
+            w_strength=float(self.variables["w_strength"].get()),
             wind_period=int(self.variables["wind_period"].get()),
             target_move_interval=int(self.variables["target_move_interval"].get()),
             context_switch_interval=int(self.variables["context_switch_interval"].get()),
@@ -239,6 +245,7 @@ class TrainingPanel:
             goal_position=list(self._parse_coordinate(self.variables["goal_position"].get(), "Goal"))
             if self.variables["goal_position"].get().strip() else None,
             manual_wind_direction=self.variables["manual_wind_direction"].get(),
+            obstacle_coordinates=[list(point) for point in obstacles] if obstacles else None,
         )
         preview_matches = (
             self.preview_maps is not None and len(self.preview_maps) == expected_maps
@@ -250,6 +257,7 @@ class TrainingPanel:
         elif obstacles:
             env.context_maps = [[list(point) for point in obstacles] for _ in range(expected_maps)]
         agent = AgentConfig(
+            algorithm=self.variables["algorithm"].get(),
             num_tilings=int(self.variables["num_tilings"].get()),
             tiles_per_dimension=int(self.variables["tiles_per_dimension"].get()),
             iht_size=int(self.variables["iht_size"].get()), lambda_=float(self.variables["lambda_"].get()),
@@ -257,7 +265,7 @@ class TrainingPanel:
             effective_initial_step=float(self.variables["effective_initial_step"].get()),
             reward_rate_step=float(self.variables["reward_rate_step"].get()),
             beta_min=float(self.variables["beta_min"].get()), beta_max=float(self.variables["beta_max"].get()),
-            use_tidbd=bool(self.variables["use_tidbd"].get()),
+            use_tidbd=self.variables["algorithm"].get() == "tidbd",
         )
         training = TrainingConfig(
             metric_window=int(self.variables["metric_window"].get()),
@@ -270,12 +278,13 @@ class TrainingPanel:
         config.validate()
         return config
 
-    def generate_preview(self) -> None:
+    def generate_preview(self, use_configured_coordinates: bool = False) -> None:
         if self.worker and self.worker.is_alive():
             return
         try:
-            self.preview_maps = None
-            self.variables["obstacle_coordinates"].set("")
+            if not use_configured_coordinates:
+                self.preview_maps = None
+                self.variables["obstacle_coordinates"].set("")
             config = self._read_config()
             environment = ContinualWindyGridWorld(config.environment)
             self.preview_maps = [set(layout) for layout in environment.context_maps]
@@ -399,9 +408,9 @@ class TrainingPanel:
     def apply_live_wind(self) -> None:
         try:
             direction = self.variables["manual_wind_direction"].get()
-            strength = int(self.variables["max_wind_strength"].get())
-            if strength < 0:
-                raise ValueError("Max wind strength cannot be negative.")
+            strength = float(self.variables["w_strength"].get())
+            if not 0.0 <= strength <= 1.0:
+                raise ValueError("Wind strength must lie in [0, 1].")
             if self.trainer is None or not self.worker or not self.worker.is_alive():
                 self.status_var.set("Wind selection will be used when training starts.")
                 return
@@ -547,10 +556,10 @@ class TrainingPanel:
         assert self.trainer is not None
         self._draw_grid(snapshot, self.trainer.config.environment.width, self.trainer.config.environment.height)
         self.layout_var.set(
-            "Start %s | Agent %s | Goal %s | Obstacles %s | Wind %s" % (
+            "Start %s | Agent %s | Goal %s | Obstacles %s | Wind %s (p=%.3g)" % (
                 tuple(snapshot.get("start_position", (-1, -1))), tuple(snapshot.get("agent_state", (-1, -1))),
                 tuple(snapshot.get("goal", (-1, -1))), snapshot.get("obstacles", []),
-                snapshot.get("manual_wind_direction", "auto"),
+                snapshot.get("manual_wind_direction", "auto"), snapshot.get("w_strength", 0.0),
             )
         )
         for key, label in self.metric_labels.items():

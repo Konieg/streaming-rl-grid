@@ -11,7 +11,7 @@ class EnvironmentTests(unittest.TestCase):
             height=5,
             obstacle_count=0,
             profile="stationary",
-            max_wind_strength=0,
+            w_strength=0.0,
             context_maps=[[]],
             seed=3,
         )
@@ -42,7 +42,7 @@ class EnvironmentTests(unittest.TestCase):
         self.assertFalse(terminated)
 
     def test_stay_action_is_still_affected_by_wind(self):
-        env = self.make_env(max_wind_strength=1)
+        env = self.make_env(w_strength=1.0, manual_wind_direction="up")
         env.agent_state = (2, 3)
         env.goal = (4, 4)
         env.step(4)
@@ -66,7 +66,7 @@ class EnvironmentTests(unittest.TestCase):
         self.assertIsNone(env.dormant_obstacle)
 
     def test_manual_environment_update_is_immediate_and_persistent(self):
-        env = self.make_env(max_wind_strength=1)
+        env = self.make_env(w_strength=1.0)
         env.agent_state = (3, 3)
         env.previous_action = 2
         env.apply_manual_configuration({(2, 2)}, (0, 0), (4, 4), "right")
@@ -79,7 +79,7 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(env.config.obstacle_count, 1)
 
     def test_live_obstacle_on_agent_cell_stays_dormant_until_departure(self):
-        env = self.make_env(max_wind_strength=0)
+        env = self.make_env(w_strength=0.0)
         env.agent_state = (2, 2)
         env.goal = (4, 4)
         env.apply_manual_configuration({(2, 2)}, (0, 0), (4, 4), "none")
@@ -89,6 +89,19 @@ class EnvironmentTests(unittest.TestCase):
         env.step(1)
         self.assertIsNone(env.dormant_obstacle)
         self.assertIn((2, 2), env.active_obstacles)
+
+    def test_wind_strength_is_a_displacement_probability(self):
+        env = self.make_env(w_strength=0.3, manual_wind_direction="right")
+        samples = [env.sample_wind((2, 2)) for _ in range(10_000)]
+        rate = sum(sample == (1, 0) for sample in samples) / len(samples)
+        self.assertGreater(rate, 0.27)
+        self.assertLess(rate, 0.33)
+
+    def test_default_environment_uses_configured_coordinates(self):
+        env = ContinualWindyGridWorld(EnvironmentConfig())
+        self.assertEqual(env.context_maps[0], {(1, 1), (2, 2), (3, 3)})
+        self.assertEqual(env.start_position, (0, 0))
+        self.assertEqual(env.goal, (4, 4))
 
     def test_customize_profile_does_not_advance_automatic_schedules(self):
         env = self.make_env(profile="customize", wind_period=1, target_move_interval=1,

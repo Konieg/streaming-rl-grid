@@ -98,7 +98,7 @@ class ContinualWindyGridWorld:
             else:
                 candidate = proposed
 
-        wind = self.wind_vector(before)
+        wind = self.sample_wind(before)
         if not collision:
             wx, wy = wind
             unit = (int(np.sign(wx)), int(np.sign(wy)))
@@ -135,19 +135,25 @@ class ContinualWindyGridWorld:
         return self.observation(), float(reward), False, False, info
 
     def wind_vector(self, state: Coord) -> Coord:
+        """Return the currently selected unit wind direction (without sampling)."""
         manual = self.config.manual_wind_direction
-        if self.config.max_wind_strength == 0 or manual == "none":
+        if self.config.w_strength == 0.0 or manual == "none":
             return (0, 0)
         if manual == "auto":
             phase = self.wind_phase if self.config.profile in ("seasonal_wind", "combined") else 0
             direction = WIND_DIRECTIONS[phase]
         else:
             direction = WIND_BY_NAME[manual]
-        axis_value = state[0] if direction[0] == 0 else state[1]
-        axis_size = self.width if direction[0] == 0 else self.height
-        center_distance = abs((axis_value + 0.5) / axis_size - 0.5)
-        strength = int(round(self.config.max_wind_strength * max(0.0, 1.0 - center_distance / 0.5)))
-        return direction[0] * strength, direction[1] * strength
+        return direction
+
+    def sample_wind(self, state: Coord) -> Coord:
+        """Sample one extra wind displacement using w_strength as its probability."""
+        direction = self.wind_vector(state)
+        if direction == (0, 0) or self.config.w_strength <= 0.0:
+            return (0, 0)
+        if self.config.w_strength >= 1.0 or self.rng.random() < self.config.w_strength:
+            return direction
+        return (0, 0)
 
     def apply_manual_configuration(
         self,
@@ -176,6 +182,7 @@ class ContinualWindyGridWorld:
 
         map_count = self.config.num_contexts if self.config.profile in ("hidden_context", "combined") else 1
         self.config.obstacle_count = len(layout)
+        self.config.obstacle_coordinates = [list(point) for point in sorted(layout)]
         if replace_maps:
             self.context_maps = [set(layout) for _ in range(map_count)]
             self.context_index = 0
@@ -244,8 +251,14 @@ class ContinualWindyGridWorld:
 
     def _prepare_context_maps(self, raw_maps: Optional[List[List[List[int]]]]) -> List[Set[Coord]]:
         expected_count = self.config.num_contexts if self.config.profile in ("hidden_context", "combined") else 1
+        if not raw_maps and self.config.obstacle_coordinates:
+            coordinates = {(int(p[0]), int(p[1])) for p in self.config.obstacle_coordinates}
+            if len(coordinates) == self.config.obstacle_count:
+                raw_maps = [[list(point) for point in sorted(coordinates)]]
         if raw_maps:
             maps = [{(int(p[0]), int(p[1])) for p in layout} for layout in raw_maps]
+            if len(maps) == 1 and expected_count > 1:
+                maps = [set(maps[0]) for _ in range(expected_count)]
             if len(maps) != expected_count:
                 raise ValueError("Expected %d context map(s), received %d." % (expected_count, len(maps)))
             for layout in maps:

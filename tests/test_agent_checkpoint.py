@@ -14,6 +14,7 @@ class AgentAndCheckpointTests(unittest.TestCase):
         config.environment.width = 6
         config.environment.height = 5
         config.environment.obstacle_count = 2
+        config.environment.obstacle_coordinates = None
         config.environment.profile = "combined"
         config.environment.wind_period = 11
         config.environment.target_move_interval = 7
@@ -67,6 +68,39 @@ class AgentAndCheckpointTests(unittest.TestCase):
                     if probabilities is not None:
                         self.assertAlmostEqual(sum(probabilities), 1.0)
 
+    def test_frozen_policy_matrix_does_not_depend_on_latest_previous_action(self):
+        with tempfile.TemporaryDirectory() as folder:
+            trainer = Trainer(self.config(), base_dir=folder)
+            trainer.run_steps(80)
+            first = trainer.snapshot()["policy_probabilities"]
+            trainer.environment.previous_action = (trainer.environment.previous_action + 1) % 5
+            second = trainer.snapshot()["policy_probabilities"]
+            self.assertEqual(first, second)
+
+    def test_unseen_policy_states_start_uniform(self):
+        with tempfile.TemporaryDirectory() as folder:
+            trainer = Trainer(self.config(), base_dir=folder)
+            snapshot = trainer.snapshot()
+            unseen = snapshot["policy_probabilities"][0][1]
+            if unseen is not None:
+                np.testing.assert_allclose(unseen, np.full(5, 0.2))
+
+    def test_sarsa_uses_shared_interface_and_restores_exactly(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = self.config()
+            config.agent.algorithm = "sarsa"
+            config.agent.use_tidbd = False
+            trainer = Trainer(config, base_dir=folder)
+            trainer.run_steps(35)
+            self.assertEqual(trainer.agent.algorithm_name, "sarsa")
+            self.assertEqual(trainer.snapshot()["algorithm"], "sarsa")
+            path = trainer.save(Path(folder) / "sarsa.pkl")
+            trainer.run_steps(20)
+            expected_weights = trainer.agent.weights.copy()
+            restored = Trainer.from_checkpoint(path, base_dir=folder)
+            restored.run_steps(20)
+            np.testing.assert_array_equal(restored.agent.weights, expected_weights)
+
     def test_trainer_applies_live_environment_without_resetting_weights(self):
         with tempfile.TemporaryDirectory() as folder:
             trainer = Trainer(self.config(), base_dir=folder)
@@ -90,10 +124,10 @@ class AgentAndCheckpointTests(unittest.TestCase):
             trainer = Trainer(self.config(), base_dir=folder)
             trainer.run_steps(20)
             position = trainer.environment.agent_state
-            snapshot = trainer.apply_wind("left", 2)
+            snapshot = trainer.apply_wind("left", 0.3)
             self.assertEqual(trainer.environment.agent_state, position)
             self.assertEqual(snapshot["manual_wind_direction"], "left")
-            self.assertEqual(trainer.environment.config.max_wind_strength, 2)
+            self.assertEqual(trainer.environment.config.w_strength, 0.3)
 
     def test_environment_apply_preserves_policy_when_policy_state_is_unchanged(self):
         with tempfile.TemporaryDirectory() as folder:

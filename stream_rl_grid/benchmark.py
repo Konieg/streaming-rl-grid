@@ -18,14 +18,15 @@ def run_benchmark(profiles: List[str], seeds: List[int], steps: int, output: Pat
     rows: List[Dict[str, float]] = []
     curves = {}
     for profile in profiles:
-        for use_tidbd in (True, False):
-            label = "TIDBD" if use_tidbd else "fixed-alpha"
+        for algorithm in ("tidbd", "sarsa"):
+            label = "TIDBD" if algorithm == "tidbd" else "Sarsa"
             method_curves = []
             for seed in seeds:
                 config = AppConfig()
                 config.environment.profile = profile
                 config.environment.seed = seed
-                config.agent.use_tidbd = use_tidbd
+                config.agent.algorithm = algorithm
+                config.agent.use_tidbd = algorithm == "tidbd"
                 config.training.auto_checkpoint_steps = steps + 1
                 trainer = Trainer(config, base_dir=output)
                 snapshot = trainer.run_steps(steps)
@@ -54,7 +55,7 @@ def run_benchmark(profiles: List[str], seeds: List[int], steps: int, output: Pat
     figure, axes = plt.subplots(len(profiles), 1, figsize=(10, max(4, 3.5 * len(profiles))), squeeze=False)
     for row_index, profile in enumerate(profiles):
         axis = axes[row_index, 0]
-        for label in ("TIDBD", "fixed-alpha"):
+        for label in ("TIDBD", "Sarsa"):
             entries = curves[(profile, label)]
             minimum = min(len(entry["steps"]) for entry in entries)
             x = np.asarray(entries[0]["steps"][:minimum])

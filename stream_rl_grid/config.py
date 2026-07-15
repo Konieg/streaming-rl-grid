@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 PROFILES = ("stationary", "seasonal_wind", "moving_goal", "hidden_context", "combined", "customize")
 WIND_CHOICES = ("auto", "up", "right", "down", "left", "none")
+ALGORITHMS = ("tidbd", "sarsa")
 
 
 @dataclass
@@ -19,14 +20,17 @@ class EnvironmentConfig:
     reward_goal: float = 10.0
     reward_collision: float = -5.0
     reward_step: float = -1.0
-    max_wind_strength: int = 1
+    w_strength: float = 0.3
     wind_period: int = 2_000
     target_move_interval: int = 500
     context_switch_interval: int = 3_000
+    obstacle_coordinates: Optional[List[List[int]]] = field(
+        default_factory=lambda: [[0, 3], [2, 2], [4, 3]]
+    )
     context_maps: Optional[List[List[List[int]]]] = None
     goal_path: Optional[List[List[int]]] = None
-    start_position: Optional[List[int]] = None
-    goal_position: Optional[List[int]] = None
+    start_position: Optional[List[int]] = field(default_factory=lambda: [0, 0])
+    goal_position: Optional[List[int]] = field(default_factory=lambda: [4, 4])
     manual_wind_direction: str = "none"
 
     def validate(self) -> None:
@@ -36,10 +40,17 @@ class EnvironmentConfig:
             raise ValueError("Unknown non-stationarity profile: %s" % self.profile)
         if self.obstacle_count < 0 or self.obstacle_count > self.width * self.height - 2:
             raise ValueError("Obstacle count leaves fewer than two legal cells.")
+        if self.context_maps is None and self.obstacle_coordinates is not None:
+            coordinates = [tuple(int(value) for value in point) for point in self.obstacle_coordinates]
+            if len(coordinates) != self.obstacle_count or len(set(coordinates)) != len(coordinates):
+                raise ValueError("obstacle_coordinates must contain obstacle_count unique coordinates.")
+            if any(len(point) != 2 or not (0 <= point[0] < self.width and 0 <= point[1] < self.height)
+                   for point in coordinates):
+                raise ValueError("Every configured obstacle coordinate must be inside the grid.")
         if self.num_contexts < 1:
             raise ValueError("num_contexts must be positive.")
-        if self.max_wind_strength < 0:
-            raise ValueError("max_wind_strength cannot be negative.")
+        if not 0.0 <= self.w_strength <= 1.0:
+            raise ValueError("w_strength must lie in [0, 1].")
         if self.manual_wind_direction not in WIND_CHOICES:
             raise ValueError("Unknown wind direction: %s" % self.manual_wind_direction)
         for name in ("start_position", "goal_position"):
@@ -57,6 +68,7 @@ class EnvironmentConfig:
 
 @dataclass
 class AgentConfig:
+    algorithm: str = "tidbd"
     num_tilings: int = 8
     tiles_per_dimension: int = 8
     iht_size: int = 65_536
@@ -70,6 +82,8 @@ class AgentConfig:
     use_tidbd: bool = True
 
     def validate(self) -> None:
+        if self.algorithm not in ALGORITHMS:
+            raise ValueError("Unknown training algorithm: %s" % self.algorithm)
         if self.num_tilings < 1:
             raise ValueError("num_tilings must be positive.")
         if self.tiles_per_dimension < 2:
@@ -81,7 +95,7 @@ class AgentConfig:
         if not 0.0 <= self.epsilon <= 1.0:
             raise ValueError("epsilon must lie in [0, 1].")
         if self.theta < 0.0 or self.effective_initial_step <= 0.0:
-            raise ValueError("TIDBD step-size parameters must be positive.")
+            raise ValueError("Step-size parameters must be positive.")
         if self.reward_rate_step <= 0.0:
             raise ValueError("reward_rate_step must be positive.")
         if self.beta_min >= self.beta_max:
@@ -119,9 +133,18 @@ class AppConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AppConfig":
+        environment_data = dict(data.get("environment", {}))
+        if "obstacle_coordinates" not in environment_data:
+            environment_data["obstacle_coordinates"] = None
+        # Backward compatibility with checkpoints created before probabilistic wind.
+        if "max_wind_strength" in environment_data and "w_strength" not in environment_data:
+            environment_data["w_strength"] = min(1.0, max(0.0, float(environment_data.pop("max_wind_strength"))))
+        agent_data = dict(data.get("agent", {}))
+        if "algorithm" not in agent_data and not agent_data.get("use_tidbd", True):
+            agent_data["algorithm"] = "sarsa"
         result = cls(
-            environment=EnvironmentConfig(**data.get("environment", {})),
-            agent=AgentConfig(**data.get("agent", {})),
+            environment=EnvironmentConfig(**environment_data),
+            agent=AgentConfig(**agent_data),
             training=TrainingConfig(**data.get("training", {})),
         )
         result.validate()
