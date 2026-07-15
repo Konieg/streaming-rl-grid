@@ -1,6 +1,6 @@
 import unittest
 
-from stream_rl_grid.config import EnvironmentConfig
+from stream_rl_grid.config import EnvironmentConfig, PROFILES
 from stream_rl_grid.environment import ContinualWindyGridWorld
 
 
@@ -30,6 +30,21 @@ class EnvironmentTests(unittest.TestCase):
         self.assertFalse(truncated)
         self.assertNotEqual(env.agent_state, env.goal)
         self.assertEqual(observation[:4], env.observation()[:4])
+
+    def test_goal_restart_is_random_legal_and_profile_independent(self):
+        obstacles = {(1, 1), (2, 2)}
+        for profile in PROFILES:
+            with self.subTest(profile=profile):
+                env = self.make_env(
+                    profile=profile,
+                    obstacle_count=len(obstacles),
+                    num_contexts=1,
+                    context_maps=[[list(point) for point in sorted(obstacles)]],
+                )
+                samples = {env._restart_state() for _ in range(100)}
+                self.assertGreater(len(samples), 1)
+                self.assertTrue(samples.isdisjoint(obstacles))
+                self.assertNotIn(env.goal, samples)
 
     def test_invalid_action_stays_and_receives_collision_reward(self):
         env = self.make_env()

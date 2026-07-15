@@ -341,8 +341,7 @@ class ContinualWindyGridWorld:
         return self._random_legal_state(exclude={self.goal})
 
     def _restart_state(self) -> Coord:
-        if self.start_position != self.goal and self.start_position not in self.active_obstacles:
-            return self.start_position
+        """Sample a fresh legal non-goal position after every goal, for every profile."""
         return self._random_legal_state(exclude={self.goal})
 
     def _random_legal_state(self, exclude: Optional[Set[Coord]] = None) -> Coord:
