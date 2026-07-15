@@ -26,7 +26,12 @@ class Trainer:
         self.run_id = run_id or datetime.now().strftime("%Y%m%d-%H%M%S")
         self.environment = ContinualWindyGridWorld(config.environment)
         self.coder = DualTileCoder(config.environment, config.agent)
-        self.agent = create_agent(self.coder, config.agent, seed=config.environment.seed + 1)
+        self.agent = create_agent(
+            self.coder,
+            config.agent,
+            seed=config.environment.seed + 1,
+            num_actions=len(ACTION_NAMES),
+        )
         self.metrics = MetricsTracker(
             config.training.metric_window,
             config.training.chart_points,
@@ -47,29 +52,27 @@ class Trainer:
         next_observation, reward, terminated, truncated, info = self.environment.step(self.current_action)
         if terminated or truncated:
             raise RuntimeError("The continuing environment must never terminate or truncate.")
-        next_action = self.agent.select_action(next_observation)
-        delta = self.agent.update(
+        delta, next_action = self.agent.learn_and_select_next(
             self.current_observation,
             self.current_action,
             reward,
             next_observation,
-            next_action,
         )
         self.current_observation = next_observation
         self.current_action = next_action
         self.last_info = info
         self.last_reward = reward
-        alpha_summary = self.agent.step_size_summary()
+        diagnostics = self.agent.diagnostics()
         self.metrics.update(
             self.step_count,
             reward,
             delta,
             info,
             self.agent.reward_rate,
-            alpha_summary["alpha_mean"],
+            diagnostics["alpha_mean"],
         )
         if self.step_count % self.config.training.ui_update_steps == 0:
-            self._append_log_row(delta, alpha_summary)
+            self._append_log_row(delta, diagnostics)
         if self.step_count % self.config.training.auto_checkpoint_steps == 0:
             self.save()
         return self.snapshot() if with_snapshot else {}
@@ -85,7 +88,7 @@ class Trainer:
     def snapshot(self) -> Dict[str, Any]:
         with self.state_lock:
             summary = self.metrics.summary(self.step_count)
-            summary.update(self.agent.step_size_summary())
+            summary.update(self.agent.diagnostics())
             frozen_policy = self.agent.freeze_policy_matrix(
                 self.environment.width, self.environment.height, self.environment.goal
             )
@@ -117,7 +120,7 @@ class Trainer:
                 "events": list(self.environment.last_events),
                 "manual_wind_direction": self.environment.config.manual_wind_direction,
                 "w_strength": self.environment.config.w_strength,
-                "algorithm": self.config.agent.algorithm,
+                "algorithm": self.agent.algorithm_name,
                 "policy_probabilities": policies,
                 "curves": self.metrics.curves(),
                 "iht_used": len(self.coder.iht.dictionary),
@@ -195,6 +198,8 @@ class Trainer:
         trainer = cls(config, base_dir=base_dir, run_id=state["run_id"])
         saved_compatibility = dict(state.get("compatibility", {}))
         saved_compatibility.setdefault("algorithm", config.agent.algorithm)
+        if saved_compatibility["algorithm"] == "sarsa_lambda":
+            saved_compatibility["algorithm"] = "sarsa"
         if saved_compatibility != trainer._compatibility_signature():
             raise ValueError("Checkpoint feature or action configuration is incompatible.")
         trainer.environment.load_state_dict(state["environment"])

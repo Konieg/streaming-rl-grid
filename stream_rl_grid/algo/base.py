@@ -1,32 +1,46 @@
-"""Common interface and policy utilities for grid-control algorithms."""
+"""Shared tile-coded epsilon-greedy interface for differential TD control."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterable, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Sequence, Tuple
 
 import numpy as np
 
-from ..config import AgentConfig
-from ..tile_coder import DualTileCoder
+if TYPE_CHECKING:
+    from ..config import AgentConfig
+    from ..tile_coder import DualTileCoder
 
 
+Observation = Tuple[int, int, int, int, int]
 StateKey = Tuple[int, int, int, int]
 
 
 class BaseControlAgent(ABC):
-    """Unified interface used by Trainer, checkpoints, and the GUI."""
+    """Common representation and behavior policy for this project's TD agents."""
 
     algorithm_name = "base"
+    display_name = "Base TD control"
+    extra_config_fields = ()
+    samples_next_action_before_update = False
 
-    def __init__(self, coder: DualTileCoder, config: AgentConfig, seed: int = 0):
+    def __init__(
+        self,
+        coder: "DualTileCoder",
+        config: "AgentConfig",
+        seed: int = 0,
+        num_actions: int = 5,
+    ):
+        if int(num_actions) < 1:
+            raise ValueError("num_actions must be positive.")
         self.coder = coder
         self.config = config
+        self.num_actions = int(num_actions)
         self.rng = np.random.default_rng(seed)
         self.weights = np.zeros(coder.size, dtype=np.float64)
         self.reward_rate = 0.0
         self.update_count = 0
         self.last_delta = 0.0
         self.visited_observations = set()
-        self.observation_counts: Dict[Tuple[int, int, int, int, int], int] = {}
+        self.observation_counts: Dict[Observation, int] = {}
         self.policy_probability_matrix = None
         self.policy_goal = None
 
@@ -40,13 +54,23 @@ class BaseControlAgent(ABC):
 
     def action_values(self, observation: Sequence[int], readonly: bool = False) -> np.ndarray:
         return np.asarray(
-            [self.value(observation, action, readonly=readonly) for action in range(5)], dtype=np.float64
+            [self.value(observation, action, readonly=readonly) for action in range(self.num_actions)],
+            dtype=np.float64,
         )
+
+    @staticmethod
+    def greedy_actions(values: Sequence[float]) -> np.ndarray:
+        values = np.asarray(values, dtype=np.float64)
+        return np.flatnonzero(np.isclose(values, values.max(), rtol=1e-12, atol=1e-12))
 
     def probabilities_from_values(self, values: Sequence[float]) -> np.ndarray:
         values = np.asarray(values, dtype=np.float64)
-        best = np.flatnonzero(np.isclose(values, values.max(), rtol=1e-12, atol=1e-12))
-        probabilities = np.full(5, self.config.epsilon / 5.0, dtype=np.float64)
+        best = self.greedy_actions(values)
+        probabilities = np.full(
+            self.num_actions,
+            self.config.epsilon / self.num_actions,
+            dtype=np.float64,
+        )
         probabilities[best] += (1.0 - self.config.epsilon) / len(best)
         return probabilities
 
@@ -58,7 +82,27 @@ class BaseControlAgent(ABC):
         self.visited_observations.add(observation)
         self.observation_counts[observation] = self.observation_counts.get(observation, 0) + 1
         probabilities = self.action_probabilities(observation, readonly=False)
-        return int(self.rng.choice(5, p=probabilities))
+        return int(self.rng.choice(self.num_actions, p=probabilities))
+
+    def learn_and_select_next(
+        self,
+        observation,
+        action,
+        reward,
+        next_observation,
+    ) -> Tuple[float, int]:
+        """Learn from one transition and sample behavior at the correct algorithmic time."""
+        if self.samples_next_action_before_update:
+            next_action = self.select_action(next_observation)
+            delta = self.update(
+                observation, action, reward, next_observation, next_action
+            )
+        else:
+            delta = self.update(
+                observation, action, reward, next_observation, None
+            )
+            next_action = self.select_action(next_observation)
+        return float(delta), int(next_action)
 
     def freeze_policy_matrix(self, width: int, height: int, goal: Sequence[int]) -> np.ndarray:
         """Freeze the current epsilon-greedy evaluation policy for every grid position.
@@ -73,7 +117,11 @@ class BaseControlAgent(ABC):
             x, y, seen_gx, seen_gy, _ = observation
             observations_by_state.setdefault((x, y, seen_gx, seen_gy), []).append((observation, count))
 
-        matrix = np.full((height, width, 5), 0.2, dtype=np.float64)
+        matrix = np.full(
+            (height, width, self.num_actions),
+            1.0 / self.num_actions,
+            dtype=np.float64,
+        )
         for y in range(height):
             for x in range(width):
                 conditional = observations_by_state.get((x, y, gx, gy), [])
@@ -92,6 +140,7 @@ class BaseControlAgent(ABC):
     def _common_state_dict(self) -> Dict[str, Any]:
         return {
             "algorithm": self.algorithm_name,
+            "num_actions": self.num_actions,
             "weights": self.weights.copy(),
             "reward_rate": self.reward_rate,
             "update_count": self.update_count,
@@ -106,6 +155,16 @@ class BaseControlAgent(ABC):
         }
 
     def _load_common_state(self, state: Dict[str, Any]) -> None:
+        saved_algorithm = state.get("algorithm")
+        if saved_algorithm == "sarsa_lambda":
+            saved_algorithm = "sarsa"
+        if saved_algorithm is not None and saved_algorithm != self.algorithm_name:
+            raise ValueError(
+                "Checkpoint algorithm %r cannot be loaded by %r."
+                % (saved_algorithm, self.algorithm_name)
+            )
+        if int(state.get("num_actions", self.num_actions)) != self.num_actions:
+            raise ValueError("Checkpoint action count is incompatible.")
         weights = np.asarray(state["weights"], dtype=np.float64)
         if weights.shape != (self.coder.size,):
             raise ValueError("Checkpoint weights have an incompatible shape.")
@@ -131,6 +190,39 @@ class BaseControlAgent(ABC):
         goal = state.get("policy_goal")
         self.policy_goal = None if goal is None else tuple(goal)
         self.coder.load_state_dict(state["coder"])
+
+    def fixed_step_size(self) -> float:
+        return self.config.effective_initial_step / self.coder.nominal_active_count
+
+    def fixed_step_size_summary(self) -> Dict[str, float]:
+        alpha = float(getattr(self, "alpha", self.fixed_step_size()))
+        return {
+            "alpha_min": alpha,
+            "alpha_mean": alpha,
+            "alpha_max": alpha,
+            "beta_clip_count": 0.0,
+        }
+
+    def record_real_update(self, delta: float) -> float:
+        """Update average reward and counters after one real environment transition."""
+        self.reward_rate += self.config.reward_rate_step * float(delta)
+        self.update_count += 1
+        self.last_delta = float(delta)
+        self.check_finite()
+        return self.last_delta
+
+    def check_finite(self) -> None:
+        if not np.all(np.isfinite(self.weights)) or not np.isfinite(self.reward_rate):
+            raise FloatingPointError("NaN or Inf detected in the learning state.")
+
+    def diagnostics(self) -> Dict[str, float]:
+        result = dict(self.step_size_summary())
+        result.update({
+            "update_count": float(self.update_count),
+            "planning_update_count": 0.0,
+            "model_size": 0.0,
+        })
+        return result
 
     @abstractmethod
     def update(self, observation, action, reward, next_observation, next_action) -> float:

@@ -1,16 +1,30 @@
-"""Algorithm factory for the shared training interface."""
+"""Registered tile-coded TD-control algorithms."""
 
 from .base import BaseControlAgent
+from .registry import algorithm_config_fields, algorithm_labels, available_algorithms, create_agent
+
+# Importing concrete modules performs their local registry declarations.
+from .dyna_q import DifferentialDynaQ
+from .q_lambda import DifferentialQLambda
+from .q_learning import DifferentialQLearning
 from .sarsa import DifferentialSarsa
 from .tidbd import DifferentialSarsaTIDBD
 
 
-def create_agent(coder, config, seed=0):
-    if config.algorithm == "tidbd":
-        return DifferentialSarsaTIDBD(coder, config, seed=seed)
-    if config.algorithm == "sarsa":
-        return DifferentialSarsa(coder, config, seed=seed)
-    raise ValueError("Unknown training algorithm: %s" % config.algorithm)
+ALGORITHMS = available_algorithms()
+ALGORITHM_LABELS = algorithm_labels()
+ALGORITHM_CONFIG_FIELDS = algorithm_config_fields()
 
 
-__all__ = ["BaseControlAgent", "DifferentialSarsa", "DifferentialSarsaTIDBD", "create_agent"]
+__all__ = [
+    "ALGORITHMS",
+    "ALGORITHM_CONFIG_FIELDS",
+    "ALGORITHM_LABELS",
+    "BaseControlAgent",
+    "DifferentialDynaQ",
+    "DifferentialQLambda",
+    "DifferentialQLearning",
+    "DifferentialSarsa",
+    "DifferentialSarsaTIDBD",
+    "create_agent",
+]

@@ -26,7 +26,6 @@ def run_benchmark(profiles: List[str], seeds: List[int], steps: int, output: Pat
                 config.environment.profile = profile
                 config.environment.seed = seed
                 config.agent.algorithm = algorithm
-                config.agent.use_tidbd = algorithm == "tidbd"
                 config.training.auto_checkpoint_steps = steps + 1
                 trainer = Trainer(config, base_dir=output)
                 snapshot = trainer.run_steps(steps)

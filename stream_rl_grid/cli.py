@@ -8,7 +8,7 @@ from .trainer import Trainer
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Streaming differential Sarsa(lambda) + TIDBD")
+    parser = argparse.ArgumentParser(description="Streaming differential TD-control algorithms")
     parser.add_argument("--resume", type=str, help="Checkpoint to continue exactly")
     parser.add_argument("--profile", choices=PROFILES, default="combined")
     parser.add_argument("--steps", type=int, default=0, help="0 means run until Ctrl+C")
@@ -17,7 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--height", type=int, default=7)
     parser.add_argument("--obstacles", type=int, default=8)
     parser.add_argument("--algorithm", choices=ALGORITHMS, default="tidbd")
-    parser.add_argument("--fixed-alpha", action="store_true", help="Disable TIDBD baseline")
+    parser.add_argument(
+        "--fixed-alpha", action="store_true",
+        help="Deprecated alias for --algorithm sarsa",
+    )
+    parser.add_argument("--planning-steps", type=int, default=5)
     parser.add_argument("--report-every", type=int, default=1_000)
     return parser
 
@@ -37,7 +41,7 @@ def main() -> None:
         config.environment.obstacle_count = args.obstacles
         config.environment.obstacle_coordinates = None
         config.agent.algorithm = "sarsa" if args.fixed_alpha else args.algorithm
-        config.agent.use_tidbd = config.agent.algorithm == "tidbd"
+        config.agent.planning_steps = args.planning_steps
         trainer = Trainer(config, base_dir=base_dir)
 
     target = None if args.steps == 0 else trainer.step_count + args.steps

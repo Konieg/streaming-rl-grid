@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
+from .algo import ALGORITHM_CONFIG_FIELDS, ALGORITHM_LABELS
 from .config import ALGORITHMS, AgentConfig, AppConfig, EnvironmentConfig, PROFILES, TrainingConfig, WIND_CHOICES
 from .environment import ContinualWindyGridWorld
 from .trainer import Trainer
@@ -21,6 +22,16 @@ Coord = Tuple[int, int]
 
 
 class TrainingPanel:
+    COMMON_AGENT_FIELDS = (
+        "num_tilings", "tiles_per_dimension", "iht_size", "epsilon",
+        "effective_initial_step", "reward_rate_step",
+    )
+    AGENT_FIELD_ORDER = (
+        "num_tilings", "tiles_per_dimension", "iht_size", "lambda_", "epsilon",
+        "theta", "effective_initial_step", "reward_rate_step", "beta_min", "beta_max",
+        "planning_steps",
+    )
+
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Streaming RL Algorithms - Continual Windy Grid")
@@ -48,6 +59,7 @@ class TrainingPanel:
         self._grid_overlays: Dict[str, int] = {}
 
         self.variables: Dict[str, tk.Variable] = {}
+        self.parameter_widgets: Dict[str, Tuple[Any, Any]] = {}
         self.metric_labels: Dict[str, ttk.Label] = {}
         self._build_layout()
         self._set_defaults(AppConfig())
@@ -94,7 +106,12 @@ class TrainingPanel:
         ttk.Button(preview_row, text="Prev map", command=lambda: self._change_preview_context(-1)).pack(side=tk.LEFT, padx=3)
         ttk.Button(preview_row, text="Next map", command=lambda: self._change_preview_context(1)).pack(side=tk.LEFT)
 
-        self._add_combo(agent_tab, "Algorithm", "algorithm", ALGORITHMS, 0)
+        algorithm_values = tuple(ALGORITHM_LABELS[name] for name in ALGORITHMS)
+        algorithm_combo = self._add_combo(
+            agent_tab, "Algorithm", "algorithm", algorithm_values, 0
+        )
+        algorithm_combo.configure(width=30)
+        algorithm_combo.bind("<<ComboboxSelected>>", self._refresh_agent_fields)
         self._add_entry(agent_tab, "Number of tilings / group", "num_tilings", 1)
         self._add_entry(agent_tab, "Tiles per dimension", "tiles_per_dimension", 2)
         self._add_entry(agent_tab, "IHT size", "iht_size", 3)
@@ -105,6 +122,7 @@ class TrainingPanel:
         self._add_entry(agent_tab, "Reward-rate step", "reward_rate_step", 8)
         self._add_entry(agent_tab, "Beta minimum", "beta_min", 9)
         self._add_entry(agent_tab, "Beta maximum", "beta_max", 10)
+        self._add_entry(agent_tab, "Dyna planning steps", "planning_steps", 11)
 
         self._add_entry(run_tab, "Metric window", "metric_window", 0)
         self._add_entry(run_tab, "Chart points", "chart_points", 1)
@@ -152,6 +170,7 @@ class TrainingPanel:
             ("reward_rate", "Estimated reward rate"), ("goals_per_1000_steps", "Goals / 1000"),
             ("collision_rate", "Collision rate"), ("abs_td_error", "Mean |TD error|"),
             ("alpha_mean", "Mean step size"), ("alpha_max", "Max step size"),
+            ("model_size", "Dyna model size"), ("planning_update_count", "Planning updates"),
             ("iht_used", "IHT used"), ("iht_collisions", "IHT collisions"),
             ("context_index", "Hidden context (log)"), ("wind_phase", "Wind phase (log)"),
             ("algorithm", "Algorithm"), ("next_action", "Next action"),
@@ -169,19 +188,57 @@ class TrainingPanel:
         self.figure_canvas.get_tk_widget().pack(fill=tk.X, pady=(6, 0))
 
     def _add_entry(self, parent: ttk.Frame, label: str, key: str, row: int) -> None:
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=4)
+        label_widget = ttk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="w", padx=6, pady=4)
         variable = tk.StringVar()
         self.variables[key] = variable
-        ttk.Entry(parent, textvariable=variable, width=18).grid(row=row, column=1, sticky="ew", padx=6, pady=4)
+        entry = ttk.Entry(parent, textvariable=variable, width=18)
+        entry.grid(row=row, column=1, sticky="ew", padx=6, pady=4)
+        self.parameter_widgets[key] = (label_widget, entry)
         parent.columnconfigure(1, weight=1)
 
-    def _add_combo(self, parent: ttk.Frame, label: str, key: str, values, row: int) -> None:
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=4)
+    def _add_combo(self, parent: ttk.Frame, label: str, key: str, values, row: int):
+        label_widget = ttk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="w", padx=6, pady=4)
         variable = tk.StringVar()
         self.variables[key] = variable
-        ttk.Combobox(parent, textvariable=variable, values=values, state="readonly", width=18).grid(
-            row=row, column=1, sticky="ew", padx=6, pady=4
+        combo = ttk.Combobox(
+            parent, textvariable=variable, values=values, state="readonly", width=18
         )
+        combo.grid(row=row, column=1, sticky="ew", padx=6, pady=4)
+        self.parameter_widgets[key] = (label_widget, combo)
+        return combo
+
+    @classmethod
+    def agent_fields_for_algorithm(cls, algorithm: str) -> Tuple[str, ...]:
+        visible = set(cls.COMMON_AGENT_FIELDS)
+        visible.update(ALGORITHM_CONFIG_FIELDS.get(algorithm, ()))
+        return tuple(key for key in cls.AGENT_FIELD_ORDER if key in visible)
+
+    def _selected_algorithm_key(self) -> str:
+        selected = self.variables["algorithm"].get()
+        if selected in ALGORITHMS:
+            return selected
+        for name, label in ALGORITHM_LABELS.items():
+            if selected == label:
+                return name
+        raise ValueError("Unknown training algorithm: %s" % selected)
+
+    def _refresh_agent_fields(self, event=None) -> None:
+        del event
+        try:
+            visible_fields = self.agent_fields_for_algorithm(
+                self._selected_algorithm_key()
+            )
+        except ValueError:
+            return
+        for key in self.AGENT_FIELD_ORDER:
+            for widget in self.parameter_widgets[key]:
+                widget.grid_remove()
+        for row, key in enumerate(visible_fields, start=1):
+            label_widget, input_widget = self.parameter_widgets[key]
+            label_widget.grid(row=row, column=0)
+            input_widget.grid(row=row, column=1)
 
     def _set_defaults(self, config: AppConfig) -> None:
         values = {}
@@ -190,7 +247,11 @@ class TrainingPanel:
         values.update(config.training.__dict__)
         for key, variable in self.variables.items():
             if key in values:
-                variable.set("" if values[key] is None else values[key])
+                value = values[key]
+                if key == "algorithm":
+                    value = ALGORITHM_LABELS.get(value, value)
+                variable.set("" if value is None else value)
+        self._refresh_agent_fields()
         maps = config.environment.context_maps or (
             [config.environment.obstacle_coordinates] if config.environment.obstacle_coordinates else []
         )
@@ -266,7 +327,7 @@ class TrainingPanel:
         elif obstacles:
             env.context_maps = [[list(point) for point in obstacles] for _ in range(expected_maps)]
         agent = AgentConfig(
-            algorithm=self.variables["algorithm"].get(),
+            algorithm=self._selected_algorithm_key(),
             num_tilings=int(self.variables["num_tilings"].get()),
             tiles_per_dimension=int(self.variables["tiles_per_dimension"].get()),
             iht_size=int(self.variables["iht_size"].get()), lambda_=float(self.variables["lambda_"].get()),
@@ -274,7 +335,7 @@ class TrainingPanel:
             effective_initial_step=float(self.variables["effective_initial_step"].get()),
             reward_rate_step=float(self.variables["reward_rate_step"].get()),
             beta_min=float(self.variables["beta_min"].get()), beta_max=float(self.variables["beta_max"].get()),
-            use_tidbd=self.variables["algorithm"].get() == "tidbd",
+            planning_steps=int(self.variables["planning_steps"].get()),
         )
         training = TrainingConfig(
             metric_window=int(self.variables["metric_window"].get()),
@@ -600,6 +661,8 @@ class TrainingPanel:
         )
         for key, label in self.metric_labels.items():
             value = snapshot.get(key, "-")
+            if key == "algorithm":
+                value = ALGORITHM_LABELS.get(value, value)
             if isinstance(value, float):
                 label.configure(text="%.6g" % value)
             else:

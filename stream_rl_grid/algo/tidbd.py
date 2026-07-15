@@ -5,14 +5,19 @@ from typing import Any, Dict
 import numpy as np
 
 from .base import BaseControlAgent
+from .registry import register_agent
 
 
+@register_agent
 class DifferentialSarsaTIDBD(BaseControlAgent):
     algorithm_name = "tidbd"
+    display_name = "Differential SARSA(λ) + TIDBD"
+    extra_config_fields = ("lambda_", "theta", "beta_min", "beta_max")
+    samples_next_action_before_update = True
 
-    def __init__(self, coder, config, seed: int = 0):
+    def __init__(self, coder, config, seed: int = 0, num_actions: int = 5):
         config.validate()
-        super().__init__(coder, config, seed)
+        super().__init__(coder, config, seed, num_actions=num_actions)
         initial_alpha = config.effective_initial_step / coder.nominal_active_count
         self.beta = np.full(coder.size, np.log(initial_alpha), dtype=np.float64)
         self.h = np.zeros(coder.size, dtype=np.float64)
@@ -39,11 +44,7 @@ class DifferentialSarsaTIDBD(BaseControlAgent):
         decay = np.ones_like(self.h)
         decay[active] = np.maximum(0.0, 1.0 - alpha[active] * self.trace[active])
         self.h = self.h * decay + alpha * delta * self.trace
-        self.reward_rate += self.config.reward_rate_step * delta
-        self.update_count += 1
-        self.last_delta = delta
-        self._check_finite()
-        return delta
+        return self.record_real_update(delta)
 
     def step_size_summary(self) -> Dict[str, float]:
         values = np.exp(self.beta)
@@ -54,7 +55,7 @@ class DifferentialSarsaTIDBD(BaseControlAgent):
             "beta_clip_count": float(self.beta_clip_count),
         }
 
-    def _check_finite(self) -> None:
+    def check_finite(self) -> None:
         arrays = (self.weights, self.beta, self.h, self.trace)
         if not all(np.all(np.isfinite(array)) for array in arrays) or not np.isfinite(self.reward_rate):
             raise FloatingPointError("NaN or Inf detected in the learning state.")
@@ -77,4 +78,4 @@ class DifferentialSarsaTIDBD(BaseControlAgent):
                 raise ValueError("Checkpoint %s has an incompatible shape." % name)
             setattr(self, name, value.copy())
         self.beta_clip_count = int(state["beta_clip_count"])
-        self._check_finite()
+        self.check_finite()

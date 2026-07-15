@@ -12,7 +12,6 @@ class AgentAndCheckpointTests(unittest.TestCase):
     def config(self):
         config = AppConfig()
         config.agent.algorithm = "tidbd"
-        config.agent.use_tidbd = True
         config.environment.width = 6
         config.environment.height = 5
         config.environment.obstacle_count = 2
@@ -111,21 +110,41 @@ class AgentAndCheckpointTests(unittest.TestCase):
             if unseen is not None:
                 np.testing.assert_allclose(unseen, np.full(5, 0.2))
 
-    def test_sarsa_uses_shared_interface_and_restores_exactly(self):
+    def test_fixed_step_algorithms_use_shared_interface_and_restore_exactly(self):
         with tempfile.TemporaryDirectory() as folder:
-            config = self.config()
-            config.agent.algorithm = "sarsa"
-            config.agent.use_tidbd = False
-            trainer = Trainer(config, base_dir=folder)
-            trainer.run_steps(35)
-            self.assertEqual(trainer.agent.algorithm_name, "sarsa")
-            self.assertEqual(trainer.snapshot()["algorithm"], "sarsa")
-            path = trainer.save(Path(folder) / "sarsa.pkl")
-            trainer.run_steps(20)
-            expected_weights = trainer.agent.weights.copy()
-            restored = Trainer.from_checkpoint(path, base_dir=folder)
-            restored.run_steps(20)
-            np.testing.assert_array_equal(restored.agent.weights, expected_weights)
+            for algorithm in ("q_learning", "q_lambda", "sarsa", "dyna_q"):
+                with self.subTest(algorithm=algorithm):
+                    config = self.config()
+                    config.agent.algorithm = algorithm
+                    config.agent.planning_steps = 3
+                    trainer = Trainer(config, base_dir=folder, run_id=algorithm)
+                    trainer.run_steps(35)
+                    self.assertEqual(trainer.agent.algorithm_name, algorithm)
+                    self.assertEqual(trainer.snapshot()["algorithm"], algorithm)
+                    path = trainer.save(Path(folder) / (algorithm + ".pkl"))
+                    trainer.run_steps(20)
+                    expected_weights = trainer.agent.weights.copy()
+                    expected_reward_rate = trainer.agent.reward_rate
+                    expected_agent_state = trainer.agent.state_dict()
+
+                    restored = Trainer.from_checkpoint(path, base_dir=folder)
+                    restored.run_steps(20)
+                    np.testing.assert_array_equal(restored.agent.weights, expected_weights)
+                    self.assertEqual(restored.agent.reward_rate, expected_reward_rate)
+                    self.assertEqual(
+                        restored.agent.state_dict().get("planning_update_count"),
+                        expected_agent_state.get("planning_update_count"),
+                    )
+                    self.assertEqual(
+                        restored.agent.state_dict().get("model"),
+                        expected_agent_state.get("model"),
+                    )
+
+    def test_legacy_tidbd_flag_maps_to_tidbd_algorithm(self):
+        restored = AppConfig.from_dict({"agent": {"use_tidbd": True}})
+        self.assertEqual(restored.agent.algorithm, "tidbd")
+        restored = AppConfig.from_dict({"agent": {"use_tidbd": False}})
+        self.assertEqual(restored.agent.algorithm, "sarsa")
 
     def test_trainer_applies_live_environment_without_resetting_weights(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -1,6 +1,7 @@
 import threading
 import unittest
 
+from stream_rl_grid.algo import ALGORITHM_LABELS
 from stream_rl_grid.gui import TrainingPanel
 
 
@@ -15,6 +16,26 @@ class GuiSnapshotDeliveryTests(unittest.TestCase):
 
         self.assertEqual(panel._take_pending_snapshot(), {"step": 9_999})
         self.assertIsNone(panel._take_pending_snapshot())
+
+    def test_algorithm_labels_expose_lambda_variants_clearly(self):
+        self.assertIn("SARSA(λ)", ALGORITHM_LABELS["sarsa"])
+        self.assertIn("Q(λ)", ALGORITHM_LABELS["q_lambda"])
+
+    def test_agent_fields_are_specific_to_selected_algorithm(self):
+        common = set(TrainingPanel.COMMON_AGENT_FIELDS)
+        expected_extras = {
+            "q_learning": set(),
+            "q_lambda": {"lambda_"},
+            "sarsa": {"lambda_"},
+            "dyna_q": {"planning_steps"},
+            "tidbd": {"lambda_", "theta", "beta_min", "beta_max"},
+        }
+        for algorithm, extras in expected_extras.items():
+            with self.subTest(algorithm=algorithm):
+                self.assertEqual(
+                    set(TrainingPanel.agent_fields_for_algorithm(algorithm)),
+                    common | extras,
+                )
 
 
 if __name__ == "__main__":

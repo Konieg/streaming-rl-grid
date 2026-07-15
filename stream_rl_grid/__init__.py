@@ -1,4 +1,4 @@
-"""Continual windy grid-world with streaming differential Sarsa and TIDBD."""
+"""Continual windy grid-world with tile-coded differential TD control."""
 
 from .config import AgentConfig, AppConfig, EnvironmentConfig, TrainingConfig
 from .environment import ACTION_NAMES, ACTIONS, NO_ACTION, ContinualWindyGridWorld

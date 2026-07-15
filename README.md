@@ -1,8 +1,12 @@
 # stream-rl-grid
 
-一个面向持续学习实验的 Windy Grid World：每个转移只使用一次、没有 replay buffer、没有 batch、没有 episode 终止。智能体采用：
+一个面向持续学习实验的 Windy Grid World：每个真实转移即时更新、没有 batch、没有 episode 终止。智能体统一采用双组 tile coding 和 ε-greedy behavior policy，并提供：
 
-**Streaming Differential Sarsa(λ) + replacing traces + 双组 tile coding + TIDBD**。
+- Differential Q-learning；
+- Watkins's Differential Q(λ)；
+- Differential SARSA(λ)；
+- Differential Dyna-Q；
+- Differential SARSA(λ) + TIDBD。
 
 项目参考了：
 
@@ -18,7 +22,7 @@
 $$Q(s, a) = w^T x(s, a)$$
 
 
-差分 Sarsa TD error 不包含折扣因子：
+Differential SARSA 的 TD error 不包含折扣因子：
 
 $$delta = reward - R_bar + Q(next_state, next_action) - Q(state, action)$$
 
@@ -26,12 +30,18 @@ $$delta = reward - R_bar + Q(next_state, next_action) - Q(state, action)$$
 
 $$ R_bar <- R_bar + eta * delta $$
 
+Differential Q-learning、Q(λ) 和 Dyna-Q 使用 off-policy greedy target：
+
+$$delta = reward - R_bar + max_a Q(next_state, a) - Q(state, action)$$
+
 资格迹采用 replacing traces：
 
 $$
 z <- lambda * z
 z[active_features] <- 1
 $$
+
+Q(λ) 采用 Watkins trace cutting：如果 behavior policy 选出的下一动作不是 greedy action，则在本次更新后清空资格迹。Dyna-Q 使用最新真实转移构成模型，每个真实步之后执行 `planning_steps` 次模型更新；平均奖励率只由真实转移更新。
 
 TIDBD 为每个权重维护 $`$beta_i = log(alpha_i)$`$ 和元迹 $H_i$：
 
@@ -98,7 +108,7 @@ python run_gui.py
 - 地图生成、上下文地图预览和障碍物手动移动；
 - 开始、暂停、继续、手动保存、停止并保存；
 - checkpoint 加载并精确续训；
-- 网格、平均奖励、目标到达率、碰撞率、TD error 和 TIDBD 步长实时显示。
+- 网格、平均奖励、目标到达率、碰撞率、TD error、步长和 Dyna planning 状态实时显示。
 
 训练在后台线程中执行，GUI 不参与智能体观测。
 
@@ -128,6 +138,15 @@ python -m stream_rl_grid.cli --resume checkpoints/<run-id>/step-000000050000.pkl
 python -m stream_rl_grid.cli --profile stationary --fixed-alpha --steps 50000
 ```
 
+选择其他算法：
+
+```powershell
+python -m stream_rl_grid.cli --algorithm q_learning --steps 50000
+python -m stream_rl_grid.cli --algorithm q_lambda --steps 50000
+python -m stream_rl_grid.cli --algorithm sarsa --steps 50000
+python -m stream_rl_grid.cli --algorithm dyna_q --planning-steps 5 --steps 50000
+```
+
 ## 多随机种子验证
 
 比较 TIDBD 与固定步长 Differential Sarsa：
@@ -142,7 +161,7 @@ python -m stream_rl_grid.benchmark --steps 50000 --seeds 0 1 2 3 4
 
 checkpoint 不只保存 `w`，还保存：
 
-- `w, beta, H, z, R_bar`；
+- `w, R_bar`，以及所选算法需要的 `z`、`beta/H` 或 Dyna model；
 - 当前观测和已经选好的下一动作；
 - 环境位置、目标、地图、风/奖励/地图调度相位；
 - 延迟激活障碍物；
@@ -160,8 +179,9 @@ python -m unittest discover -s tests -v
 
 ## Algorithm and environment configuration
 
-Algorithms share the interface in `stream_rl_grid/algo/base.py` and are selected with
-`AgentConfig.algorithm` (`"tidbd"` or `"sarsa"`). The GUI exposes the same selector.
+Algorithms share the interface in `stream_rl_grid/algo/base.py` and are registered by
+their implementations. `AgentConfig.algorithm` accepts `"q_learning"`, `"q_lambda"`,
+`"sarsa"`, `"dyna_q"`, or `"tidbd"`; the GUI exposes the same selector.
 The policy shown by the GUI is a frozen `(height, width, 5)` epsilon-greedy probability
 matrix built from the current learned parameters; it is separate from the action sampled
 by the online behavior loop.
@@ -171,4 +191,4 @@ Default maps can be authored directly in `EnvironmentConfig` with
 `w_strength=0.3` means a 30% chance of one additional cell of displacement in the selected
 wind direction on each transition.
 
-测试覆盖 continuing 目标传送、碰撞回退、`stay` 的风效应、地图切换延迟障碍物、TIDBD 数值有限性，以及 checkpoint 后逐状态/逐动作/逐权重的精确续训。
+测试覆盖各算法的 bootstrap target、Watkins trace cutting、Dyna planning、continuing 目标传送、碰撞回退、`stay` 的风效应、地图切换延迟障碍物、TIDBD 数值有限性，以及 checkpoint 后的精确续训。

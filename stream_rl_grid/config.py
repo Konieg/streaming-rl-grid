@@ -3,10 +3,10 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
+from .algo import ALGORITHMS
 
 PROFILES = ("stationary", "seasonal_wind", "moving_goal", "hidden_context", "combined", "customize")
 WIND_CHOICES = ("auto", "up", "right", "down", "left", "none")
-ALGORITHMS = ("tidbd", "sarsa")
 
 
 @dataclass
@@ -79,7 +79,7 @@ class AgentConfig:
     reward_rate_step: float = 0.01
     beta_min: float = -20.0
     beta_max: float = 0.0
-    use_tidbd: bool = True
+    planning_steps: int = 5
 
     def validate(self) -> None:
         if self.algorithm not in ALGORITHMS:
@@ -94,12 +94,17 @@ class AgentConfig:
             raise ValueError("lambda must lie in [0, 1].")
         if not 0.0 <= self.epsilon <= 1.0:
             raise ValueError("epsilon must lie in [0, 1].")
-        if self.theta < 0.0 or self.effective_initial_step <= 0.0:
-            raise ValueError("Step-size parameters must be positive.")
+        if self.effective_initial_step <= 0.0:
+            raise ValueError("effective_initial_step must be positive.")
         if self.reward_rate_step <= 0.0:
             raise ValueError("reward_rate_step must be positive.")
-        if self.beta_min >= self.beta_max:
-            raise ValueError("beta_min must be smaller than beta_max.")
+        if self.planning_steps < 0:
+            raise ValueError("planning_steps cannot be negative.")
+        if self.algorithm == "tidbd":
+            if self.theta < 0.0:
+                raise ValueError("TIDBD theta cannot be negative.")
+            if self.beta_min >= self.beta_max:
+                raise ValueError("beta_min must be smaller than beta_max.")
 
 
 @dataclass
@@ -140,7 +145,10 @@ class AppConfig:
         if "max_wind_strength" in environment_data and "w_strength" not in environment_data:
             environment_data["w_strength"] = min(1.0, max(0.0, float(environment_data.pop("max_wind_strength"))))
         agent_data = dict(data.get("agent", {}))
-        if "algorithm" not in agent_data and not agent_data.get("use_tidbd", True):
+        legacy_use_tidbd = agent_data.pop("use_tidbd", None)
+        if "algorithm" not in agent_data:
+            agent_data["algorithm"] = "tidbd" if legacy_use_tidbd is not False else "sarsa"
+        if agent_data["algorithm"] == "sarsa_lambda":
             agent_data["algorithm"] = "sarsa"
         result = cls(
             environment=EnvironmentConfig(**environment_data),
