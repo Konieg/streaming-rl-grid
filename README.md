@@ -2,20 +2,20 @@
 
 一个面向持续学习实验的 Windy Grid World：每个转移只使用一次、没有 replay buffer、没有 batch、没有 episode 终止。智能体采用：
 
-**Streaming Differential Sarsa(λ) + replacing traces + 双组 tile coding + TIDBD**。
+**Streaming Differential Sarsa(λ) + replacing traces + 离散 Q 表 + TIDBD**。
 
 项目参考了：
 
 - `Streaming Deep Reinforcement Learning Finally Works` 中的逐样本即时更新与资格迹思想；
 - `TIDBD: Adapting Temporal-difference Step-sizes Through Stochastic Meta-descent` 的逐特征步长更新；
-- RLSS Lecture 02 的线性函数逼近和 tile coding；
+- RLSS Lecture 02 的 on-policy prediction 与资格迹更新；
 - RLSS Lecture 03 的 continuing average-reward / differential TD 更新。
 
 ## 算法
 
-动作值函数是线性的：
+动作值函数使用离散表格表示。实现中每个完整的 `(state, action)` 对应唯一参数：
 
-$$Q(s, a) = w^T x(s, a)$$
+$$Q(s, a) = w_{index(s,a)}$$
 
 
 差分 Sarsa TD error 不包含折扣因子：
@@ -33,7 +33,7 @@ z <- lambda * z
 z[active_features] <- 1
 $$
 
-TIDBD 为每个权重维护 $`$beta_i = log(alpha_i)$`$ 和元迹 $H_i$：
+TIDBD 为每个权重维护 $beta_i = log(alpha_i)$ 和元迹 $H_i$：
 
 $$
 beta_i <- beta_i + theta * delta * x_i * H_i
@@ -44,7 +44,7 @@ $$
 
 实现不叠加 ObGD，以免改变 TIDBD 实验含义；只设置宽松的 `beta` 数值边界并检测 NaN/Inf。
 
-## 状态与函数逼近
+## 状态与离散 Q 表
 
 智能体可观察：
 
@@ -54,12 +54,11 @@ $$
 
 它看不到风阶段、奖励阶段、地图模式编号或全局时钟。
 
-双组 tile coding 分别编码：
-
-1. 绝对位置 `(x, y, previous_action, candidate_action)`；
-2. 相对目标位置 `(goal_x-x, goal_y-y, previous_action, candidate_action)`。
-
-另有一个 categorical bias feature。默认每组 8 个 tilings，因此正常情况下每次有 17 个激活特征。
+由于坐标、目标坐标、上一动作和候选动作都是有限离散变量，代码直接为
+`(x, y, goal_x, goal_y, previous_action, candidate_action)` 分配无碰撞的确定性索引。
+每次只有一个表项被激活，不进行分桶、散列或跨状态泛化。`previous_action`
+有 6 个取值（五个动作加初始 `no action`），因此参数量为
+`width * height * width * height * 6 * 5`。
 
 ## Continuing 环境规则
 
@@ -146,7 +145,7 @@ checkpoint 不只保存 `w`，还保存：
 - 当前观测和已经选好的下一动作；
 - 环境位置、目标、地图、风/奖励/地图调度相位；
 - 延迟激活障碍物；
-- IHT 字典与碰撞计数；
+- 离散状态—动作索引表示的元数据；
 - Python 和 NumPy 随机数状态；
 - 滑动指标、曲线、配置和格式版本。
 

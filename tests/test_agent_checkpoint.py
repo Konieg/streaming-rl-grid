@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from stream_rl_grid.config import AppConfig
+from stream_rl_grid.discrete_features import DiscreteStateActionFeatures
 from stream_rl_grid.trainer import Trainer
 
 
@@ -21,13 +22,12 @@ class AgentAndCheckpointTests(unittest.TestCase):
         config.environment.wind_period = 11
         config.environment.target_move_interval = 7
         config.environment.context_switch_interval = 13
-        config.agent.iht_size = 4096
         config.training.metric_window = 50
         config.training.ui_update_steps = 5
         config.training.auto_checkpoint_steps = 1_000_000
         return config
 
-    def test_tile_coder_and_tidbd_remain_finite(self):
+    def test_tabular_tidbd_remains_finite(self):
         with tempfile.TemporaryDirectory() as folder:
             trainer = Trainer(self.config(), base_dir=folder)
             trainer.run_steps(200)
@@ -57,14 +57,29 @@ class AgentAndCheckpointTests(unittest.TestCase):
             np.testing.assert_array_equal(restored.agent.beta, expected_beta)
             self.assertEqual(restored.environment.state_dict()["rng_state"], trainer.environment.state_dict()["rng_state"])
 
-    def test_policy_snapshot_is_normalized_without_allocating_visualization_features(self):
+    def test_discrete_state_action_indices_are_unique(self):
+        config = self.config()
+        features = DiscreteStateActionFeatures(config.environment)
+        indices = {
+            int(features.active((x, y, gx, gy, previous_action), action)[0])
+            for x in range(config.environment.width)
+            for y in range(config.environment.height)
+            for gx in range(config.environment.width)
+            for gy in range(config.environment.height)
+            for previous_action in range(6)
+            for action in range(5)
+        }
+        self.assertEqual(len(indices), features.size)
+        self.assertEqual(min(indices), 0)
+        self.assertEqual(max(indices), features.size - 1)
+
+    def test_policy_snapshot_is_normalized_without_mutating_q_table(self):
         with tempfile.TemporaryDirectory() as folder:
             trainer = Trainer(self.config(), base_dir=folder)
             trainer.run_steps(10)
-            used_before = len(trainer.coder.iht.dictionary)
+            weights_before = trainer.agent.weights.copy()
             snapshot = trainer.snapshot()
-            used_after = len(trainer.coder.iht.dictionary)
-            self.assertEqual(used_after, used_before)
+            np.testing.assert_array_equal(trainer.agent.weights, weights_before)
             for row in snapshot["policy_probabilities"]:
                 for probabilities in row:
                     if probabilities is not None:

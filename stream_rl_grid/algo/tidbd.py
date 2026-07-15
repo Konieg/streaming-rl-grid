@@ -10,18 +10,18 @@ from .base import BaseControlAgent
 class DifferentialSarsaTIDBD(BaseControlAgent):
     algorithm_name = "tidbd"
 
-    def __init__(self, coder, config, seed: int = 0):
+    def __init__(self, features, config, seed: int = 0):
         config.validate()
-        super().__init__(coder, config, seed)
-        initial_alpha = config.effective_initial_step / coder.nominal_active_count
-        self.beta = np.full(coder.size, np.log(initial_alpha), dtype=np.float64)
-        self.h = np.zeros(coder.size, dtype=np.float64)
-        self.trace = np.zeros(coder.size, dtype=np.float64)
+        super().__init__(features, config, seed)
+        initial_alpha = config.effective_initial_step
+        self.beta = np.full(features.size, np.log(initial_alpha), dtype=np.float64)
+        self.h = np.zeros(features.size, dtype=np.float64)
+        self.trace = np.zeros(features.size, dtype=np.float64)
         self.beta_clip_count = 0
 
     def update(self, observation, action, reward, next_observation, next_action) -> float:
-        active = self.coder.active(observation, action)
-        next_active = self.coder.active(next_observation, next_action)
+        active = self.features.active(observation, action)
+        next_active = self.features.active(next_observation, next_action)
         delta = float(
             reward - self.reward_rate
             + self.weights[next_active].sum() - self.weights[active].sum()
@@ -73,7 +73,7 @@ class DifferentialSarsaTIDBD(BaseControlAgent):
         self._load_common_state(state)
         for name in ("beta", "h", "trace"):
             value = np.asarray(state[name], dtype=np.float64)
-            if value.shape != (self.coder.size,):
+            if value.shape != (self.features.size,):
                 raise ValueError("Checkpoint %s has an incompatible shape." % name)
             setattr(self, name, value.copy())
         self.beta_clip_count = int(state["beta_clip_count"])

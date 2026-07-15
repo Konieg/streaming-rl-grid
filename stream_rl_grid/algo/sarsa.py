@@ -10,15 +10,15 @@ from .base import BaseControlAgent
 class DifferentialSarsa(BaseControlAgent):
     algorithm_name = "sarsa"
 
-    def __init__(self, coder, config, seed: int = 0):
+    def __init__(self, features, config, seed: int = 0):
         config.validate()
-        super().__init__(coder, config, seed)
-        self.trace = np.zeros(coder.size, dtype=np.float64)
-        self.alpha = config.effective_initial_step / coder.nominal_active_count
+        super().__init__(features, config, seed)
+        self.trace = np.zeros(features.size, dtype=np.float64)
+        self.alpha = config.effective_initial_step
 
     def update(self, observation, action, reward, next_observation, next_action) -> float:
-        active = self.coder.active(observation, action)
-        next_active = self.coder.active(next_observation, next_action)
+        active = self.features.active(observation, action)
+        next_active = self.features.active(next_observation, next_action)
         delta = float(
             reward - self.reward_rate
             + self.weights[next_active].sum() - self.weights[active].sum()
@@ -47,7 +47,7 @@ class DifferentialSarsa(BaseControlAgent):
     def load_state_dict(self, state: Dict[str, Any]) -> None:
         self._load_common_state(state)
         trace = np.asarray(state["trace"], dtype=np.float64)
-        if trace.shape != (self.coder.size,):
+        if trace.shape != (self.features.size,):
             raise ValueError("Checkpoint trace has an incompatible shape.")
         self.trace = trace.copy()
-        self.alpha = float(state.get("alpha", self.config.effective_initial_step / self.coder.nominal_active_count))
+        self.alpha = float(state.get("alpha", self.config.effective_initial_step))

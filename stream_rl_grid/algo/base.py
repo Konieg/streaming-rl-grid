@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, Sequence, Tuple
 import numpy as np
 
 from ..config import AgentConfig
-from ..tile_coder import DualTileCoder
+from ..discrete_features import DiscreteStateActionFeatures
 
 
 StateKey = Tuple[int, int, int, int]
@@ -17,11 +17,11 @@ class BaseControlAgent(ABC):
 
     algorithm_name = "base"
 
-    def __init__(self, coder: DualTileCoder, config: AgentConfig, seed: int = 0):
-        self.coder = coder
+    def __init__(self, features: DiscreteStateActionFeatures, config: AgentConfig, seed: int = 0):
+        self.features = features
         self.config = config
         self.rng = np.random.default_rng(seed)
-        self.weights = np.zeros(coder.size, dtype=np.float64)
+        self.weights = np.zeros(features.size, dtype=np.float64)
         self.reward_rate = 0.0
         self.update_count = 0
         self.last_delta = 0.0
@@ -35,7 +35,7 @@ class BaseControlAgent(ABC):
         return self.config.epsilon
 
     def value(self, observation: Sequence[int], action: int, readonly: bool = False) -> float:
-        active = self.coder.active(observation, action, readonly=readonly)
+        active = self.features.active(observation, action, readonly=readonly)
         return float(self.weights[active].sum())
 
     def action_values(self, observation: Sequence[int], readonly: bool = False) -> np.ndarray:
@@ -102,12 +102,12 @@ class BaseControlAgent(ABC):
             "policy_probability_matrix": None if self.policy_probability_matrix is None
             else self.policy_probability_matrix.copy(),
             "policy_goal": self.policy_goal,
-            "coder": self.coder.state_dict(),
+            "features": self.features.state_dict(),
         }
 
     def _load_common_state(self, state: Dict[str, Any]) -> None:
         weights = np.asarray(state["weights"], dtype=np.float64)
-        if weights.shape != (self.coder.size,):
+        if weights.shape != (self.features.size,):
             raise ValueError("Checkpoint weights have an incompatible shape.")
         self.weights = weights.copy()
         self.reward_rate = float(state["reward_rate"])
@@ -130,7 +130,7 @@ class BaseControlAgent(ABC):
         self.policy_probability_matrix = None if policy is None else np.asarray(policy, dtype=np.float64).copy()
         goal = state.get("policy_goal")
         self.policy_goal = None if goal is None else tuple(goal)
-        self.coder.load_state_dict(state["coder"])
+        self.features.load_state_dict(state["features"])
 
     @abstractmethod
     def update(self, observation, action, reward, next_observation, next_action) -> float:

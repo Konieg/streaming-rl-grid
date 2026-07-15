@@ -95,16 +95,13 @@ class TrainingPanel:
         ttk.Button(preview_row, text="Next map", command=lambda: self._change_preview_context(1)).pack(side=tk.LEFT)
 
         self._add_combo(agent_tab, "Algorithm", "algorithm", ALGORITHMS, 0)
-        self._add_entry(agent_tab, "Number of tilings / group", "num_tilings", 1)
-        self._add_entry(agent_tab, "Tiles per dimension", "tiles_per_dimension", 2)
-        self._add_entry(agent_tab, "IHT size", "iht_size", 3)
-        self._add_entry(agent_tab, "Lambda", "lambda_", 4)
-        self._add_entry(agent_tab, "Epsilon", "epsilon", 5)
-        self._add_entry(agent_tab, "TIDBD theta", "theta", 6)
-        self._add_entry(agent_tab, "Initial effective step", "effective_initial_step", 7)
-        self._add_entry(agent_tab, "Reward-rate step", "reward_rate_step", 8)
-        self._add_entry(agent_tab, "Beta minimum", "beta_min", 9)
-        self._add_entry(agent_tab, "Beta maximum", "beta_max", 10)
+        self._add_entry(agent_tab, "Lambda", "lambda_", 1)
+        self._add_entry(agent_tab, "Epsilon", "epsilon", 2)
+        self._add_entry(agent_tab, "TIDBD theta", "theta", 3)
+        self._add_entry(agent_tab, "Initial step size", "effective_initial_step", 4)
+        self._add_entry(agent_tab, "Reward-rate step", "reward_rate_step", 5)
+        self._add_entry(agent_tab, "Beta minimum", "beta_min", 6)
+        self._add_entry(agent_tab, "Beta maximum", "beta_max", 7)
 
         self._add_entry(run_tab, "Metric window", "metric_window", 0)
         self._add_entry(run_tab, "Chart points", "chart_points", 1)
@@ -152,7 +149,7 @@ class TrainingPanel:
             ("reward_rate", "Estimated reward rate"), ("goals_per_1000_steps", "Goals / 1000"),
             ("collision_rate", "Collision rate"), ("abs_td_error", "Mean |TD error|"),
             ("alpha_mean", "Mean step size"), ("alpha_max", "Max step size"),
-            ("iht_used", "IHT used"), ("iht_collisions", "IHT collisions"),
+            ("q_parameter_count", "Q-table parameters"),
             ("context_index", "Hidden context (log)"), ("wind_phase", "Wind phase (log)"),
             ("algorithm", "Algorithm"), ("next_action", "Next action"),
         ]
@@ -267,9 +264,7 @@ class TrainingPanel:
             env.context_maps = [[list(point) for point in obstacles] for _ in range(expected_maps)]
         agent = AgentConfig(
             algorithm=self.variables["algorithm"].get(),
-            num_tilings=int(self.variables["num_tilings"].get()),
-            tiles_per_dimension=int(self.variables["tiles_per_dimension"].get()),
-            iht_size=int(self.variables["iht_size"].get()), lambda_=float(self.variables["lambda_"].get()),
+            lambda_=float(self.variables["lambda_"].get()),
             epsilon=float(self.variables["epsilon"].get()), theta=float(self.variables["theta"].get()),
             effective_initial_step=float(self.variables["effective_initial_step"].get()),
             reward_rate_step=float(self.variables["reward_rate_step"].get()),

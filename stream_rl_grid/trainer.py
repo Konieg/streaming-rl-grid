@@ -12,9 +12,9 @@ import numpy as np
 from .algo import create_agent
 from .checkpoint import load_checkpoint, save_checkpoint
 from .config import AppConfig
+from .discrete_features import DiscreteStateActionFeatures
 from .environment import ACTION_NAMES, ContinualWindyGridWorld
 from .metrics import MetricsTracker
-from .tile_coder import DualTileCoder
 
 
 class Trainer:
@@ -25,8 +25,8 @@ class Trainer:
         self.base_dir = Path(base_dir or Path.cwd()).resolve()
         self.run_id = run_id or datetime.now().strftime("%Y%m%d-%H%M%S")
         self.environment = ContinualWindyGridWorld(config.environment)
-        self.coder = DualTileCoder(config.environment, config.agent)
-        self.agent = create_agent(self.coder, config.agent, seed=config.environment.seed + 1)
+        self.features = DiscreteStateActionFeatures(config.environment)
+        self.agent = create_agent(self.features, config.agent, seed=config.environment.seed + 1)
         self.metrics = MetricsTracker(
             config.training.metric_window,
             config.training.chart_points,
@@ -120,9 +120,8 @@ class Trainer:
                 "algorithm": self.config.agent.algorithm,
                 "policy_probabilities": policies,
                 "curves": self.metrics.curves(),
-                "iht_used": len(self.coder.iht.dictionary),
-                "iht_size": self.coder.iht.size,
-                "iht_collisions": self.coder.iht.overfull_count,
+                "q_parameter_count": self.features.size,
+                "representation": "tabular-one-hot",
                 }
             )
             return summary
@@ -191,6 +190,8 @@ class Trainer:
     @classmethod
     def from_checkpoint(cls, path: Union[str, Path], base_dir: Optional[Union[str, Path]] = None) -> "Trainer":
         state = load_checkpoint(path)
+        if state.get("compatibility", {}).get("representation") != "tabular-one-hot":
+            raise ValueError("Checkpoint uses an incompatible state-action representation.")
         config = AppConfig.from_dict(state["config"])
         trainer = cls(config, base_dir=base_dir, run_id=state["run_id"])
         saved_compatibility = dict(state.get("compatibility", {}))
@@ -214,11 +215,9 @@ class Trainer:
             "width": self.config.environment.width,
             "height": self.config.environment.height,
             "actions": list(ACTION_NAMES),
-            "num_tilings": self.config.agent.num_tilings,
-            "tiles_per_dimension": self.config.agent.tiles_per_dimension,
-            "iht_size": self.config.agent.iht_size,
             "algorithm": self.config.agent.algorithm,
-            "feature_groups": ["absolute_position", "relative_goal", "categorical_bias"],
+            "representation": "tabular-one-hot",
+            "observation_fields": ["x", "y", "goal_x", "goal_y", "previous_action"],
         }
 
     def _append_log_row(self, delta: float, alpha: Dict[str, float]) -> None:

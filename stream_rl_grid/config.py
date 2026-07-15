@@ -68,10 +68,7 @@ class EnvironmentConfig:
 
 @dataclass
 class AgentConfig:
-    algorithm: str = "sarsa"
-    num_tilings: int = 8
-    tiles_per_dimension: int = 8
-    iht_size: int = 65_536
+    algorithm: str = "tidbd"
     lambda_: float = 0.8
     epsilon: float = 0.1
     theta: float = 0.01
@@ -84,12 +81,6 @@ class AgentConfig:
     def validate(self) -> None:
         if self.algorithm not in ALGORITHMS:
             raise ValueError("Unknown training algorithm: %s" % self.algorithm)
-        if self.num_tilings < 1:
-            raise ValueError("num_tilings must be positive.")
-        if self.tiles_per_dimension < 2:
-            raise ValueError("tiles_per_dimension must be at least 2.")
-        if self.iht_size < 128:
-            raise ValueError("iht_size must be at least 128.")
         if not 0.0 <= self.lambda_ <= 1.0:
             raise ValueError("lambda must lie in [0, 1].")
         if not 0.0 <= self.epsilon <= 1.0:

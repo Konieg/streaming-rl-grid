@@ -5,11 +5,11 @@ from .sarsa import DifferentialSarsa
 from .tidbd import DifferentialSarsaTIDBD
 
 
-def create_agent(coder, config, seed=0):
+def create_agent(features, config, seed=0):
     if config.algorithm == "tidbd":
-        return DifferentialSarsaTIDBD(coder, config, seed=seed)
+        return DifferentialSarsaTIDBD(features, config, seed=seed)
     if config.algorithm == "sarsa":
-        return DifferentialSarsa(coder, config, seed=seed)
+        return DifferentialSarsa(features, config, seed=seed)
     raise ValueError("Unknown training algorithm: %s" % config.algorithm)
 
 
