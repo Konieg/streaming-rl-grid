@@ -26,6 +26,7 @@ class BaseControlAgent(ABC):
         self.update_count = 0
         self.last_delta = 0.0
         self.visited_observations = set()
+        self.observation_counts: Dict[Tuple[int, int, int, int, int], int] = {}
         self.policy_probability_matrix = None
         self.policy_goal = None
 
@@ -55,6 +56,7 @@ class BaseControlAgent(ABC):
     def select_action(self, observation: Sequence[int]) -> int:
         observation = tuple(int(value) for value in observation)
         self.visited_observations.add(observation)
+        self.observation_counts[observation] = self.observation_counts.get(observation, 0) + 1
         probabilities = self.action_probabilities(observation, readonly=False)
         return int(self.rng.choice(5, p=probabilities))
 
@@ -62,26 +64,27 @@ class BaseControlAgent(ABC):
         """Freeze the current epsilon-greedy evaluation policy for every grid position.
 
         The environment includes previous_action in its Markov state. For a stable 2-D GUI
-        view, values are averaged over the previous-action values actually observed at each
-        (position, goal) state. Completely unseen states retain the uniform random policy.
+        view, conditional action-probability vectors are mixed using their empirical visit
+        frequencies. Completely unseen states retain the uniform random policy.
         """
         gx, gy = int(goal[0]), int(goal[1])
-        previous_by_state: Dict[StateKey, list] = {}
-        for x, y, seen_gx, seen_gy, previous_action in self.visited_observations:
-            previous_by_state.setdefault((x, y, seen_gx, seen_gy), []).append(previous_action)
+        observations_by_state: Dict[StateKey, list] = {}
+        for observation, count in self.observation_counts.items():
+            x, y, seen_gx, seen_gy, _ = observation
+            observations_by_state.setdefault((x, y, seen_gx, seen_gy), []).append((observation, count))
 
         matrix = np.full((height, width, 5), 0.2, dtype=np.float64)
         for y in range(height):
             for x in range(width):
-                previous_actions = previous_by_state.get((x, y, gx, gy), [])
-                if not previous_actions:
+                conditional = observations_by_state.get((x, y, gx, gy), [])
+                if not conditional:
                     continue
-                values = np.mean(
-                    [self.action_values((x, y, gx, gy, previous), readonly=True)
-                     for previous in sorted(set(previous_actions))],
+                matrix[y, x] = np.average(
+                    [self.action_probabilities(observation, readonly=True)
+                     for observation, _ in conditional],
+                    weights=[count for _, count in conditional],
                     axis=0,
                 )
-                matrix[y, x] = self.probabilities_from_values(values)
         self.policy_probability_matrix = matrix
         self.policy_goal = (gx, gy)
         return matrix.copy()
@@ -95,6 +98,7 @@ class BaseControlAgent(ABC):
             "last_delta": self.last_delta,
             "rng_state": self.rng.bit_generator.state,
             "visited_observations": sorted(self.visited_observations),
+            "observation_counts": self.observation_counts.copy(),
             "policy_probability_matrix": None if self.policy_probability_matrix is None
             else self.policy_probability_matrix.copy(),
             "policy_goal": self.policy_goal,
@@ -114,6 +118,14 @@ class BaseControlAgent(ABC):
             tuple(int(value) for value in observation)
             for observation in state.get("visited_observations", [])
         }
+        raw_counts = state.get("observation_counts")
+        if raw_counts is None:
+            self.observation_counts = {observation: 1 for observation in self.visited_observations}
+        else:
+            self.observation_counts = {
+                tuple(int(value) for value in observation): int(count)
+                for observation, count in raw_counts.items()
+            }
         policy = state.get("policy_probability_matrix")
         self.policy_probability_matrix = None if policy is None else np.asarray(policy, dtype=np.float64).copy()
         goal = state.get("policy_goal")

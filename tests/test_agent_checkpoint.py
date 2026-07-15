@@ -79,6 +79,30 @@ class AgentAndCheckpointTests(unittest.TestCase):
             second = trainer.snapshot()["policy_probabilities"]
             self.assertEqual(first, second)
 
+    def test_frozen_position_policy_mixes_conditional_probabilities_not_q_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = AppConfig()
+            config.agent.algorithm = "sarsa"
+            config.training.auto_checkpoint_steps = 1_000_000
+            trainer = Trainer(config, base_dir=folder)
+            trainer.run_steps(1_000, with_snapshot=False)
+            gx, gy = trainer.environment.goal
+            grouped = {}
+            for observation, count in trainer.agent.observation_counts.items():
+                if observation[2:4] == (gx, gy):
+                    grouped.setdefault(observation[:2], []).append((observation, count))
+            position, conditional = next(
+                (position, entries) for position, entries in grouped.items() if len(entries) >= 2
+            )
+            expected = np.average(
+                [trainer.agent.action_probabilities(observation) for observation, _ in conditional],
+                weights=[count for _, count in conditional], axis=0,
+            )
+            matrix = trainer.agent.freeze_policy_matrix(
+                trainer.environment.width, trainer.environment.height, trainer.environment.goal
+            )
+            np.testing.assert_allclose(matrix[position[1], position[0]], expected)
+
     def test_unseen_policy_states_start_uniform(self):
         with tempfile.TemporaryDirectory() as folder:
             trainer = Trainer(self.config(), base_dir=folder)
