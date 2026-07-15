@@ -68,7 +68,7 @@ class EnvironmentConfig:
 
 @dataclass
 class AgentConfig:
-    algorithm: str = "tidbd"
+    algorithm: str = "sarsa"
     num_tilings: int = 8
     tiles_per_dimension: int = 8
     iht_size: int = 65_536

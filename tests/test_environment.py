@@ -98,10 +98,11 @@ class EnvironmentTests(unittest.TestCase):
         self.assertLess(rate, 0.33)
 
     def test_default_environment_uses_configured_coordinates(self):
-        env = ContinualWindyGridWorld(EnvironmentConfig())
-        self.assertEqual(env.context_maps[0], {(1, 1), (2, 2), (3, 3)})
-        self.assertEqual(env.start_position, (0, 0))
-        self.assertEqual(env.goal, (4, 4))
+        config = EnvironmentConfig()
+        env = ContinualWindyGridWorld(config)
+        self.assertEqual(env.context_maps[0], {tuple(point) for point in config.obstacle_coordinates})
+        self.assertEqual(env.start_position, tuple(config.start_position))
+        self.assertEqual(env.goal, tuple(config.goal_position))
 
     def test_customize_profile_does_not_advance_automatic_schedules(self):
         env = self.make_env(profile="customize", wind_period=1, target_move_interval=1,

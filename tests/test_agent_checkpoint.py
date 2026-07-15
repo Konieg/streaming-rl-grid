@@ -11,6 +11,8 @@ from stream_rl_grid.trainer import Trainer
 class AgentAndCheckpointTests(unittest.TestCase):
     def config(self):
         config = AppConfig()
+        config.agent.algorithm = "tidbd"
+        config.agent.use_tidbd = True
         config.environment.width = 6
         config.environment.height = 5
         config.environment.obstacle_count = 2

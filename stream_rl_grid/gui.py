@@ -32,6 +32,8 @@ class TrainingPanel:
         self.pause_event = threading.Event()
         self.save_event = threading.Event()
         self.messages: "queue.Queue[Tuple[str, Any]]" = queue.Queue()
+        self._snapshot_lock = threading.Lock()
+        self._pending_snapshot: Optional[Dict[str, Any]] = None
         self.preview_maps: Optional[List[Set[Coord]]] = None
         self.preview_context = 0
         self.selected_obstacle: Optional[Coord] = None
@@ -443,6 +445,7 @@ class TrainingPanel:
         self.stop_event.clear()
         self.pause_event.clear()
         self.save_event.clear()
+        self._take_pending_snapshot()
         self.worker = threading.Thread(target=self._training_loop, name="stream-rl-training", daemon=True)
         self.worker.start()
         self.start_button.configure(state=tk.DISABLED)
@@ -456,6 +459,7 @@ class TrainingPanel:
     def _training_loop(self) -> None:
         assert self.trainer is not None
         try:
+            last_snapshot_time = 0.0
             while not self.stop_event.is_set():
                 if self.save_event.is_set():
                     path = self.trainer.save()
@@ -464,10 +468,18 @@ class TrainingPanel:
                 if self.pause_event.is_set():
                     time.sleep(0.05)
                     continue
-                snapshot = self.trainer.run_steps(
-                    self.trainer.config.training.ui_update_steps, stop_event=self.stop_event
+                self.trainer.run_steps(
+                    self.trainer.config.training.ui_update_steps,
+                    stop_event=self.stop_event,
+                    with_snapshot=False,
                 )
-                self.messages.put(("snapshot", snapshot))
+                now = time.monotonic()
+                if now - last_snapshot_time >= 0.05:
+                    self._publish_snapshot(self.trainer.snapshot())
+                    last_snapshot_time = now
+                # Give Tk's main thread a scheduling opportunity even for very fast algorithms.
+                time.sleep(0.001)
+            self._publish_snapshot(self.trainer.snapshot())
             self.messages.put(("stopped", None))
         except Exception as exc:
             try:
@@ -475,6 +487,17 @@ class TrainingPanel:
             except Exception:
                 path = None
             self.messages.put(("error", (exc, path)))
+
+    def _publish_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """Publish one GUI frame, replacing any older frame not rendered yet."""
+        with self._snapshot_lock:
+            self._pending_snapshot = snapshot
+
+    def _take_pending_snapshot(self) -> Optional[Dict[str, Any]]:
+        with self._snapshot_lock:
+            snapshot = self._pending_snapshot
+            self._pending_snapshot = None
+            return snapshot
 
     def toggle_pause(self) -> None:
         if self.pause_event.is_set():
@@ -486,6 +509,7 @@ class TrainingPanel:
             self.pause_button.configure(text="Resume")
             if self.trainer is not None:
                 snapshot = self.trainer.snapshot()
+                self._take_pending_snapshot()
                 self._render_snapshot(snapshot)
                 self.preview_maps = [set(layout) for layout in self.trainer.environment.context_maps]
                 self.preview_context = self.trainer.environment.context_index
@@ -527,11 +551,14 @@ class TrainingPanel:
             messagebox.showerror("Cannot load checkpoint", str(exc))
 
     def _poll_messages(self) -> None:
+        latest_snapshot = self._take_pending_snapshot()
         try:
-            while True:
+            # Process a bounded number of control messages so this callback always
+            # returns to Tk's event loop even if a very fast algorithm is running.
+            for _ in range(32):
                 kind, payload = self.messages.get_nowait()
                 if kind == "snapshot":
-                    self._render_snapshot(payload)
+                    latest_snapshot = payload
                 elif kind == "saved":
                     self.status_var.set("Saved: %s" % payload)
                 elif kind == "stopped":
@@ -543,6 +570,8 @@ class TrainingPanel:
                     messagebox.showerror("Training paused by safety check", "%s\nDiagnostic checkpoint: %s" % (exc, path))
         except queue.Empty:
             pass
+        if latest_snapshot is not None:
+            self._render_snapshot(latest_snapshot)
         self.root.after(100, self._poll_messages)
 
     def _set_idle_controls(self) -> None:

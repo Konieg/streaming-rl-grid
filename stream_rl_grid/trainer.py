@@ -74,14 +74,13 @@ class Trainer:
             self.save()
         return self.snapshot() if with_snapshot else {}
 
-    def run_steps(self, count: int, stop_event=None) -> Dict[str, Any]:
+    def run_steps(self, count: int, stop_event=None, with_snapshot: bool = True) -> Dict[str, Any]:
         with self.state_lock:
-            snapshot = self.snapshot()
             for _ in range(int(count)):
                 if stop_event is not None and stop_event.is_set():
                     break
                 self.step_once(with_snapshot=False)
-            return self.snapshot()
+            return self.snapshot() if with_snapshot else {}
 
     def snapshot(self) -> Dict[str, Any]:
         with self.state_lock:
