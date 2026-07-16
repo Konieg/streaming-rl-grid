@@ -34,6 +34,17 @@ replay、batch 或 eligibility trace。
 4. `moving_goal`：显式给定至少两个合法 waypoint 的 `goal_path`，
    `target_move_interval=500`。环境沿该路径往返移动，因此可观察 goal A→B→A 的 recurrence。
 
+以上三种 non-stationarity 在主实验中共享**唯一固定 schedule**：切换间隔统一为 500 个 global
+steps，3,000-step formal run 的预定切换点固定为
+`[500, 1000, 1500, 2000, 2500, 3000]`。切换周期、首次切换时刻或不同 change step 都不是实验轴；
+不得为它们建立额外 run、sweep 或子实验。每个 Phase 只在这一条固定 schedule 上比较 alpha 机制。
+
+formal runner 必须核对实际 mode change 是否与上述 schedule 一致。`seasonal_wind` 和
+`hidden_context` 在每个固定点直接推进 phase/context；当前 `moving_goal` 环境会在下一个 waypoint
+与 `agent_state` 重合时跳过该 waypoint，因此“每 500 step 尝试移动”未必等于“每 500 step 实际
+改变 goal”。这属于无效的 protocol run，不构成另一种切换步长条件；在 moving-goal 结果进入正式
+比较前，必须保证目标在固定点确实切换，否则排除该 run。
+
 主实验由一个 stationary 对照和三类性质不同的 non-stationarity 组成：
 
 - `seasonal_wind` 改变风和 reward phase；
@@ -243,6 +254,19 @@ Phase 0 的 stationary 条件下做一次小型校准后，对所有方法和环
 
 轴 C 不制造地图切换；它规定如何评价轴 B 中 A→B→A 的 retention。恢复快但 A probe 已退化，
 只能称为 tracking，不能称为 retention。
+
+retention 统一从已有 formal trace 离线计算，不增加训练 run：初始 A 的最后一个 metric window 定义
+共同 baseline；分别记录初次学习 A 和第一次回到 A 后达到该 baseline（含既定 10% tolerance）的
+recovery steps。冻结 A probe 的 retention loss 从“离开 A 前最后一个 probe”计算到“A 第一次返回前
+最后一个 probe”；prediction 中 error 上升为正 loss，control 中 reward/goal-rate 下降为正 loss。
+只有 schedule 合规的 run 进入 aggregate，未恢复的 run 保留为 `null` 并单独计数，不能静默删除。
+统一命令为：
+
+```powershell
+python -m experiments.retention path\to\summary.json
+```
+
+它只读取现有 `summary.json`/trace 并写出同目录的 `retention.json`，不会重跑 learner。
 
 ### Phase 0–2 的严格对齐矩阵
 

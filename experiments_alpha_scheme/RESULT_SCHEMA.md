@@ -24,3 +24,14 @@ python -m experiments.plotting path\to\fixed\summary.json path\to\adaptive\summa
 The shared plots are `learning_curves.png`, `final_metrics.png`, `adaptation_retention.png`,
 `a_probes.png`, and `alpha_dynamics.png`. The adaptation/retention file appears only after a run contains a mode change.
 Phase-specific plots may be added, but must not replace these common outputs.
+
+Retention is a derived, read-only analysis rather than another experiment. Run
+
+```powershell
+python -m experiments.retention path\to\summary.json
+```
+
+to write `retention.json` beside the source bundle. It records schedule compliance, initial-A
+acquisition, first-A-recurrence recovery, and frozen-A-probe retention loss. Runs whose actual
+change steps differ from the single fixed schedule remain listed but are excluded from retention
+aggregates; missing recovery stays `null`.

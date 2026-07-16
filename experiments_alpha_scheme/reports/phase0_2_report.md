@@ -39,13 +39,15 @@
 
 moving-goal control 的合规 n 因此为：P0.2 各方法 n=4；P2.1 fixed 0.01/0.05 为 n=4、fixed 0.10 为 n=3；P2.2 adaptive 为 n=3。其余结果使用 n=5。
 
-### 缺失证据
+### Artifact 限制与补充分析
 
 - formal protocol 未记录 exact wind strength/direction、两张 context maps 和 goal path；mode 标签只能部分佐证，无法从 artifact 独立复核全部环境配置。
 - Phase 0 无逐步 alpha trace 和 `alpha_dynamics.png`；Phase 1–2 的五类共享图齐全。
 - 无 run-note 文件。
-- aggregate 只覆盖 whole-run metrics；没有正式跨 seed steady-state window、AUEC、recovery、recurrence 或 A-probe aggregate。
-- recurrence 无 recurrence recovery time；A-probe 虽每 run 有 31 checkpoints，但无预注册 retention scalar。
+- 原始 aggregate 只覆盖 whole-run metrics。现已用统一的只读 `experiments.retention` 定义，从现有
+  trace 和 A-probe 生成六个 `retention.json`；未增加或重跑训练。它补充了初次 A acquisition、首次
+  A recurrence recovery、两者差值和 B 期间冻结 A-probe retention loss，并排除 schedule 不合规 run。
+- `retention.json` 只分析第一次 A→B→A；未恢复保留为 `null` 并通过统计中的 n 显示，不静默删除。
 - 完整 visitation distribution、空间 error heatmap、action-block weight norm 和 alpha/reward 时间先后关系未形成可直接审计的 summary 指标。
 
 ## 3. Phase 0：tabular baseline
@@ -98,18 +100,25 @@ adaptive 在四个环境均未低于最佳 fixed mean。seasonal wind 中 adapti
 
 这是 tabular 与 D=55 的 representation/parameter-sharing gap，包含 approximation/projection error；不能称为纯 step-size effect，也不能在缺空间 error artifact 时单独断言 interference。
 
-### 首次切换与 A-probe
+### 完整 retention 分析
 
-| 环境 | 方法 | step-500 AUEC | recovery | A-probe δ², 500→1000 |
-|---|---|---:|---:|---:|
-| seasonal | fixed .01 | 1718.9±334.5 | 42.0±7.2，n=4 recovered | 4.654±.520 → 4.926±.556 |
-| seasonal | adaptive | 1954.4±248.0 | 64.0±31.3 | 5.125±.283 → 5.491±.621 |
-| hidden | fixed .01 | 995.3±238.3 | 36.0±11.0 | 4.252±.664 → 4.115±.610 |
-| hidden | adaptive | 992.2±197.0 | 36.8±11.8 | 4.177±.627 → 4.009±.496 |
-| moving | fixed .01 | 1153.3±202.4 | 31.6±3.3 | 4.252±.664 → 4.269±.671 |
-| moving | adaptive | 1146.1±155.7 | 31.0±3.5 | 4.177±.628 → 4.490±.648 |
+`recurrence−initial` 为负表示第一次回到 A 后，比初次学习 A 更快达到同一个初始-A baseline；
+probe loss 为正表示训练非 A 模式期间冻结 A-probe 变差。比较 adaptive 与 whole-run TD error 最低的
+fixed .01：
 
-seasonal 不显示 adaptive adaptation/retention 改善；hidden/moving 的 AUEC/recovery 接近且不确定性重叠。moving adaptive 的 A-probe 均值在 B 窗口后上升，但因无正式 retention aggregate，不能单独形成稳定遗忘结论。
+| 环境 | 方法 | initial A steps | recurrent A steps | recurrence−initial | A-probe error loss |
+|---|---|---:|---:|---:|---:|
+| seasonal | fixed .01 | 47.6±11.2 | 25.0±0.0 | -22.6±11.2 | +0.172±0.188 |
+| seasonal | adaptive | 47.6±11.2 | 25.0±0.0 | -22.6±11.2 | +0.650±0.373 |
+| hidden | fixed .01 | 63.8±15.1 | 30.4±4.1 | -33.4±16.3 | -0.177±0.096 |
+| hidden | adaptive | 62.8±14.9 | 28.6±3.6 | -34.2±15.9 | +0.089±0.121 |
+| moving | fixed .01 | 63.8±15.1 | 28.2±2.7 | -35.6±15.9 | -0.130±0.044 |
+| moving | adaptive | 62.8±14.9 | 30.8±3.6 | -32.0±16.1 | +0.325±0.229 |
+
+所有方法在 recurrence 上通常比 initial acquisition 快，但这不是 adaptive 独有。adaptive 的 frozen-A
+probe loss 在三个环境均为正，并且均值高于 fixed .01；因此 Phase 1 不支持 adaptive 带来更好的
+retention。该结论同时使用 recurrence recovery 和 B 期间不学习 A 的冻结 probe，而不再把“回到 A 后
+重新学得快”单独当作 retention。
 
 ## 5. Phase 2：D=55 control
 
@@ -124,24 +133,34 @@ seasonal 不显示 adaptive adaptation/retention 改善；hidden/moving 的 AUEC
 
 adaptive 在四个环境均未超过最佳 fixed mean reward/goal。seasonal 中 adaptive 为 -1.318±.038、36.7±7.3，fixed .10 为 -1.095±.084、63.0±13.8，是最清楚的均值差距。
 
-control 中 TD error 与 reward 排序不同：seasonal fixed .01 的 δ²=5.192±.811，低于 fixed .10 的 9.104±1.988，但 reward/goal 更差。因此较低 TD error 不能替代 control performance。
+control 中 TD error 与 reward 排序不同：seasonal fixed .01 的 δ²=5.192±.811，低于 fixed .10 的
+9.104±1.988，但 reward/goal 更差。TD error 衡量当前 value 对自身 bootstrap target 的一致性；reward
+衡量由该 value 诱导的策略实际控制效果。一个保守、变化慢的 value 可以有较小 TD error，却仍给出较差
+动作排序；较大的 alpha 也可能更快改变策略并提高 reward，同时因 target/visitation 持续改变而产生更大
+TD error。因此 TIDBD 使用 TD-error meta signal，不等于它直接优化 reward，也不保证 whole-run TD error
+必然低于所有 fixed alpha。
 
 ### 与 P0 control 的对齐比较
 
 两者在 task/environment/alpha/seed 上对齐，但 tabular→LFA 会改变 generalization，进而改变 epsilon-greedy policy 和 visitation。结果也非单向：stationary fixed .10 reward 为 -.787±.243 → -.972±.042；hidden fixed .10 为 -1.136±.019 → -1.063±.015。缺完整 visitation distribution，故只能报告 representation/parameter sharing 与 policy–data coupling 共同改变，不能拆成纯因果效应。
 
-### 首次切换与 A-probe
+### 完整 retention 分析
 
-以 whole-run reward 最佳的 fixed .10 为 comparator：
+以 whole-run reward/goal 最佳的 fixed .10 为 comparator；probe reward loss 为正表示训练非 A 模式时
+冻结 A-policy reward 下降：
 
-| 环境 | 方法 | step-500 AUEC | recovery | A-probe reward, 500→1000 |
-|---|---|---:|---:|---:|
-| seasonal | fixed .10 | 569.2±120.9 | 126.8±12.9 | -1.932±.708 → -2.500±.865 |
-| seasonal | adaptive | 463.8±155.1 | 98.5±31.2，n=4 recovered | -2.024±.883 → -3.160±.590 |
-| hidden | fixed .10 | 75.0±30.2 | 25.0±0.0 | -1.800±.800 → -1.000±.000 |
-| hidden | adaptive | 89.0±33.5 | 47.6±13.9 | -1.000±.000 → -1.000±.000 |
+| 环境 | 方法 | initial A steps | recurrent A steps | recurrence−initial | A-probe reward loss |
+|---|---|---:|---:|---:|---:|
+| seasonal | fixed .10 | 105.2±13.5 | 33.8±4.2 | -71.4±15.0 | +1.724±0.969 |
+| seasonal | adaptive | 107.0±37.5 | 78.6±27.1 | -28.4±18.3 | +0.396±0.538 |
+| hidden | fixed .10 | 59.8±9.6 | 25.0±0.0 | -34.8±9.6 | -0.768±0.768 |
+| hidden | adaptive | 64.0±11.8 | 25.0±0.0 | -39.0±11.8 | -0.714±0.714 |
+| moving | fixed .10 | 46.7±7.4 | 25.0±0.0 | -21.7±7.4 | +0.053±2.263，n=3 |
+| moving | adaptive | 79.3±11.9 | 25.0±0.0 | -54.3±11.9 | 0.000±0.000，n=3 |
 
-moving goal 因 schedule deviations 和较小 n 不用于首切结论。seasonal adaptive 的 AUEC/recovery 均值较小，但 A-probe 更差且 whole-run reward/goal 落后，不满足“同时改善 adaptation 与 retention/steady performance”。hidden 无一致 adaptive 改善。
+Phase 2 的 retention 是混合结果：seasonal adaptive 的 probe loss 小于 fixed .10，但 recurrence recovery
+更慢，且 whole-run reward/goal 更差；hidden 两者相近。moving 只剩 3 个 schedule-compliant runs，
+不作强结论。因此 adaptive 没有跨环境、跨 retention 指标的一致优势。
 
 ## 6. Adaptive alpha 证据
 
@@ -169,20 +188,20 @@ P1 terminal alpha 分位数：
 ### Unsupported
 
 1. **adaptive 优于所有 fixed baseline：不支持。** P1 的 adaptive δ² 和 P2 的 adaptive reward/goal 均未超过各环境最佳 fixed mean。
-2. **adaptive 同时改善 adaptation 与 retention：不支持。** AUEC/recovery 无跨环境一致改善，seasonal A-probe 还出现不利方向。
+2. **adaptive 同时改善 adaptation 与 retention：不支持。** Phase 1 的 adaptive A-probe loss 均高于
+   comparator；Phase 2 的 recurrence recovery 与 probe loss 呈混合排序，没有跨环境一致优势。
 3. **低 alpha 等于可删除 feature：不支持。** Phase 0–2 没有冻结消融。
 
 ### Inconclusive
 
-1. hidden/moving prediction 中 adaptive 与最佳 fixed 的 adaptation 均值接近，但 n=5 且缺正式 retention aggregate。
-2. recurrence retention 不确定：有首次/再次 stable reward 与 δ²，但无 recurrence recovery time。
-3. 无法从 artifact 分离 projection error、parameter-sharing interference 与 control visitation shift。
-4. 无法验证 feature-identity 层面的跨 seed alpha 稳定性。
+1. moving-goal control retention 只有 3 个 schedule-compliant runs，不能作强结论。
+2. 无法从 artifact 分离 projection error、parameter-sharing interference 与 control visitation shift。
+3. 无法验证 feature-identity 层面的跨 seed alpha 稳定性。
 
 ## 8. Phase 3 决策
 
 **建议暂时停止在 Phase 3 之前。**
 
-alpha 分位和粗 group 确实稳定分化，但严格门槛要求“跨 seed 的逐 feature adaptive-alpha difference”。现有 artifact 没有保存 55 个具体 feature 的 alpha identity/trajectory，只能验证分位和 group 层面；同时 P1/P2 adaptive 没有显示超过最佳 fixed 的稳定性能优势，retention 证据也不完整。
+alpha 分位和粗 group 确实稳定分化，但严格门槛要求“跨 seed 的逐 feature adaptive-alpha difference”。现有 artifact 没有保存 55 个具体 feature 的 alpha identity/trajectory，只能验证分位和 group 层面；同时 P1/P2 adaptive 没有显示超过最佳 fixed 的稳定性能或 retention 优势。
 
 因此 Phase 3 gate 当前应判为 **inconclusive**，不能把粗粒度 alpha 分化当作已满足逐 feature 稳定性条件，也不能宣称 feature-selection 机制成立。
