@@ -3,6 +3,7 @@
 import queue
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -159,11 +160,18 @@ class TrainingPanel:
             value_label.grid(row=row, column=1, sticky="e", padx=5, pady=2)
             self.metric_labels[key] = value_label
 
-        figure = Figure(figsize=(10, 2.8), dpi=100)
-        self.reward_axis = figure.add_subplot(121)
-        self.diagnostic_axis = figure.add_subplot(122)
-        self.figure_canvas = FigureCanvasTkAgg(figure, master=display)
+        self.figure = Figure(figsize=(10, 2.8), dpi=100)
+        self.reward_axis = self.figure.add_subplot(121)
+        self.diagnostic_axis = self.figure.add_subplot(122)
+        self.figure_canvas = FigureCanvasTkAgg(self.figure, master=display)
         self.figure_canvas.get_tk_widget().pack(fill=tk.X, pady=(6, 0))
+        self.save_curves_button = ttk.Button(
+            display,
+            text="Save curves with timestamp",
+            command=self.save_curves,
+            state=tk.DISABLED,
+        )
+        self.save_curves_button.pack(anchor=tk.E, padx=4, pady=(3, 0))
 
     def _add_entry(self, parent: ttk.Frame, label: str, key: str, row: int) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=4)
@@ -527,6 +535,40 @@ class TrainingPanel:
         self.save_event.set()
         self.status_var.set("Checkpoint requested...")
 
+    def save_curves(self) -> None:
+        """Save both live curve panels with a local timestamp in the image and filename."""
+        if self.trainer is None or self.last_snapshot is None:
+            messagebox.showinfo("No curves", "Start or load training before saving curves.")
+            return
+        saved_at = datetime.now().astimezone()
+        timestamp = saved_at.strftime("%Y%m%d-%H%M%S-%f")
+        folder = (
+            self.base_dir
+            / self.trainer.config.training.log_dir
+            / self.trainer.run_id
+            / "figures"
+        )
+        path = folder / ("learning_curves_%s.png" % timestamp)
+        timestamp_label = "Saved at %s" % saved_at.isoformat(timespec="seconds")
+        annotation = None
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            annotation = self.figure.text(
+                0.995, 0.01, timestamp_label, ha="right", va="bottom", fontsize=7, color="#555"
+            )
+            self.figure.savefig(
+                path,
+                dpi=150,
+                bbox_inches="tight",
+                metadata={"Title": "Continual RL learning curves", "Creation Time": timestamp_label},
+            )
+            self.status_var.set("Curves saved: %s" % path)
+        except Exception as exc:
+            messagebox.showerror("Cannot save curves", str(exc))
+        finally:
+            if annotation is not None:
+                annotation.remove()
+
     def stop_training(self) -> None:
         self.stop_event.set()
         self.status_var.set("Stopping without saving after the current streaming update...")
@@ -615,6 +657,7 @@ class TrainingPanel:
         self.diagnostic_axis.grid(alpha=0.25)
         self.diagnostic_axis.legend(fontsize=8)
         self.figure_canvas.draw_idle()
+        self.save_curves_button.configure(state=tk.NORMAL)
 
     def _draw_grid(self, snapshot: Dict[str, Any], width: int, height: int) -> None:
         canvas = self.grid_canvas

@@ -121,7 +121,8 @@ class ContinualWindyGridWorld:
             self.dormant_obstacle = None
 
         if reached_goal:
-            self.agent_state = self._restart_state()
+            self.start_position = self._restart_state()
+            self.agent_state = self.start_position
             if self.dormant_obstacle is not None and self.agent_state != self.dormant_obstacle:
                 self.dormant_obstacle = None
 
