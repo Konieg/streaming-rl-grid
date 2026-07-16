@@ -97,12 +97,17 @@ class TrainingPanel:
 
         self._add_combo(agent_tab, "Algorithm", "algorithm", ALGORITHMS, 0)
         self._add_entry(agent_tab, "Lambda", "lambda_", 1)
-        self._add_entry(agent_tab, "Epsilon", "epsilon", 2)
+        self._add_entry(agent_tab, "Fixed epsilon", "epsilon", 2)
         self._add_entry(agent_tab, "TIDBD theta", "theta", 3)
         self._add_entry(agent_tab, "Initial step size", "effective_initial_step", 4)
         self._add_entry(agent_tab, "Reward-rate step", "reward_rate_step", 5)
         self._add_entry(agent_tab, "Beta minimum", "beta_min", 6)
         self._add_entry(agent_tab, "Beta maximum", "beta_max", 7)
+        self._add_entry(agent_tab, "Adaptive epsilon kappa", "adaptive_epsilon_kappa", 8)
+        self._add_entry(agent_tab, "Adaptive epsilon minimum", "adaptive_epsilon_min", 9)
+        self._add_entry(agent_tab, "Adaptive epsilon maximum", "adaptive_epsilon_max", 10)
+        self._add_entry(agent_tab, "Adaptive epsilon scale c", "adaptive_epsilon_scale", 11)
+        self._add_entry(agent_tab, "Adaptive epsilon u_ref", "adaptive_epsilon_u_ref", 12)
 
         self._add_entry(run_tab, "Metric window", "metric_window", 0)
         self._add_entry(run_tab, "Chart points", "chart_points", 1)
@@ -149,6 +154,7 @@ class TrainingPanel:
             ("step", "Step"), ("average_reward", "Window avg reward"),
             ("reward_rate", "Estimated reward rate"), ("goals_per_1000_steps", "Goals / 1000"),
             ("collision_rate", "Collision rate"), ("abs_td_error", "Mean |TD error|"),
+            ("epsilon", "Current epsilon"), ("td_error_magnitude", "Smoothed |TD error|"),
             ("alpha_mean", "Mean step size"), ("alpha_max", "Max step size"),
             ("q_parameter_count", "Q-table parameters"),
             ("context_index", "Hidden context (log)"), ("wind_phase", "Wind phase (log)"),
@@ -278,6 +284,11 @@ class TrainingPanel:
             reward_rate_step=float(self.variables["reward_rate_step"].get()),
             beta_min=float(self.variables["beta_min"].get()), beta_max=float(self.variables["beta_max"].get()),
             use_tidbd=self.variables["algorithm"].get() == "tidbd",
+            adaptive_epsilon_kappa=float(self.variables["adaptive_epsilon_kappa"].get()),
+            adaptive_epsilon_min=float(self.variables["adaptive_epsilon_min"].get()),
+            adaptive_epsilon_max=float(self.variables["adaptive_epsilon_max"].get()),
+            adaptive_epsilon_scale=float(self.variables["adaptive_epsilon_scale"].get()),
+            adaptive_epsilon_u_ref=float(self.variables["adaptive_epsilon_u_ref"].get()),
         )
         training = TrainingConfig(
             metric_window=int(self.variables["metric_window"].get()),
@@ -652,6 +663,10 @@ class TrainingPanel:
         self.diagnostic_axis.clear()
         self.diagnostic_axis.plot(curves["steps"], curves["abs_td_error"], label="mean |delta|")
         self.diagnostic_axis.plot(curves["steps"], curves["alpha_mean"], label="mean alpha")
+        self.diagnostic_axis.plot(curves["steps"], curves.get("epsilon", []), label="epsilon")
+        magnitude_curve = curves.get("td_error_magnitude", [])
+        if any(value == value for value in magnitude_curve):
+            self.diagnostic_axis.plot(curves["steps"], magnitude_curve, label="smoothed |delta|")
         self.diagnostic_axis.set_title("Adaptation diagnostics")
         self.diagnostic_axis.set_xlabel("stream step")
         self.diagnostic_axis.grid(alpha=0.25)

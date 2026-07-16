@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 PROFILES = ("stationary", "seasonal_wind", "moving_goal", "hidden_context", "combined", "customize")
 WIND_CHOICES = ("auto", "up", "right", "down", "left", "none")
-ALGORITHMS = ("tidbd", "sarsa", "true_online_sarsa")
+ALGORITHMS = ("tidbd", "sarsa", "true_online_sarsa", "adaptive_epsilon_sarsa")
 
 
 @dataclass
@@ -77,6 +77,11 @@ class AgentConfig:
     beta_min: float = -20.0
     beta_max: float = 0.0
     use_tidbd: bool = True
+    adaptive_epsilon_kappa: float = 0.01
+    adaptive_epsilon_min: float = 0.02
+    adaptive_epsilon_max: float = 0.30
+    adaptive_epsilon_scale: float = 0.10
+    adaptive_epsilon_u_ref: float = 1.0
 
     def validate(self) -> None:
         if self.algorithm not in ALGORITHMS:
@@ -91,6 +96,12 @@ class AgentConfig:
             raise ValueError("reward_rate_step must be positive.")
         if self.beta_min >= self.beta_max:
             raise ValueError("beta_min must be smaller than beta_max.")
+        if not 0.0 < self.adaptive_epsilon_kappa <= 1.0:
+            raise ValueError("Adaptive epsilon kappa must lie in (0, 1].")
+        if not 0.0 <= self.adaptive_epsilon_min <= self.adaptive_epsilon_max <= 1.0:
+            raise ValueError("Adaptive epsilon bounds must satisfy 0 <= min <= max <= 1.")
+        if self.adaptive_epsilon_scale < 0.0 or self.adaptive_epsilon_u_ref < 0.0:
+            raise ValueError("Adaptive epsilon scale and u_ref must be non-negative.")
 
 
 @dataclass

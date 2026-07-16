@@ -25,6 +25,8 @@ class MetricsTracker:
         self.curve_reward_rate: Deque[float] = deque(maxlen=self.chart_points)
         self.curve_abs_delta: Deque[float] = deque(maxlen=self.chart_points)
         self.curve_alpha_mean: Deque[float] = deque(maxlen=self.chart_points)
+        self.curve_epsilon: Deque[float] = deque(maxlen=self.chart_points)
+        self.curve_td_error_magnitude: Deque[float] = deque(maxlen=self.chart_points)
 
     def update(
         self,
@@ -34,6 +36,8 @@ class MetricsTracker:
         info: Dict[str, Any],
         reward_rate: float,
         alpha_mean: float,
+        epsilon: float = float("nan"),
+        td_error_magnitude: float = float("nan"),
     ) -> None:
         goal = int(bool(info.get("goal_reached", False)))
         collision = int(bool(info.get("collision", False)))
@@ -54,6 +58,8 @@ class MetricsTracker:
             self.curve_reward_rate.append(float(reward_rate))
             self.curve_abs_delta.append(self.window_abs_delta)
             self.curve_alpha_mean.append(float(alpha_mean))
+            self.curve_epsilon.append(float(epsilon))
+            self.curve_td_error_magnitude.append(float(td_error_magnitude))
 
     @property
     def window_average_reward(self) -> float:
@@ -90,6 +96,8 @@ class MetricsTracker:
             "reward_rate": list(self.curve_reward_rate),
             "abs_td_error": list(self.curve_abs_delta),
             "alpha_mean": list(self.curve_alpha_mean),
+            "epsilon": list(self.curve_epsilon),
+            "td_error_magnitude": list(self.curve_td_error_magnitude),
         }
 
     def state_dict(self) -> Dict[str, Any]:
@@ -127,3 +135,8 @@ class MetricsTracker:
         self.curve_reward_rate = deque(curves["reward_rate"], maxlen=self.chart_points)
         self.curve_abs_delta = deque(curves["abs_td_error"], maxlen=self.chart_points)
         self.curve_alpha_mean = deque(curves["alpha_mean"], maxlen=self.chart_points)
+        missing = [float("nan")] * len(self.curve_steps)
+        self.curve_epsilon = deque(curves.get("epsilon", missing), maxlen=self.chart_points)
+        self.curve_td_error_magnitude = deque(
+            curves.get("td_error_magnitude", missing), maxlen=self.chart_points
+        )

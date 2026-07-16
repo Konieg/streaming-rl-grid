@@ -2,6 +2,7 @@
 
 from .algo import (
     BaseControlAgent,
+    DifferentialAdaptiveEpsilonSarsa,
     DifferentialSarsa,
     DifferentialSarsaTIDBD,
     DifferentialTrueOnlineSarsa,
@@ -10,6 +11,7 @@ from .algo import (
 
 __all__ = [
     "BaseControlAgent",
+    "DifferentialAdaptiveEpsilonSarsa",
     "DifferentialSarsa",
     "DifferentialSarsaTIDBD",
     "DifferentialTrueOnlineSarsa",

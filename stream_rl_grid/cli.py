@@ -18,6 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--obstacles", type=int, default=8)
     parser.add_argument("--algorithm", choices=ALGORITHMS, default="tidbd")
     parser.add_argument("--fixed-alpha", action="store_true", help="Disable TIDBD baseline")
+    parser.add_argument("--epsilon-kappa", type=float, default=0.01)
+    parser.add_argument("--epsilon-min", type=float, default=0.02)
+    parser.add_argument("--epsilon-max", type=float, default=0.30)
+    parser.add_argument("--epsilon-scale", type=float, default=0.10)
+    parser.add_argument("--epsilon-u-ref", type=float, default=1.0)
     parser.add_argument("--report-every", type=int, default=1_000)
     return parser
 
@@ -38,6 +43,11 @@ def main() -> None:
         config.environment.obstacle_coordinates = None
         config.agent.algorithm = "sarsa" if args.fixed_alpha else args.algorithm
         config.agent.use_tidbd = config.agent.algorithm == "tidbd"
+        config.agent.adaptive_epsilon_kappa = args.epsilon_kappa
+        config.agent.adaptive_epsilon_min = args.epsilon_min
+        config.agent.adaptive_epsilon_max = args.epsilon_max
+        config.agent.adaptive_epsilon_scale = args.epsilon_scale
+        config.agent.adaptive_epsilon_u_ref = args.epsilon_u_ref
         trainer = Trainer(config, base_dir=base_dir)
 
     target = None if args.steps == 0 else trainer.step_count + args.steps

@@ -60,6 +60,7 @@ class Trainer:
         self.last_info = info
         self.last_reward = reward
         alpha_summary = self.agent.step_size_summary()
+        exploration_summary = self.agent.exploration_summary()
         self.metrics.update(
             self.step_count,
             reward,
@@ -67,6 +68,8 @@ class Trainer:
             info,
             self.agent.reward_rate,
             alpha_summary["alpha_mean"],
+            exploration_summary["epsilon"],
+            exploration_summary.get("td_error_magnitude", float("nan")),
         )
         if self.step_count % self.config.training.ui_update_steps == 0:
             self._append_log_row(delta, alpha_summary)
@@ -86,6 +89,7 @@ class Trainer:
         with self.state_lock:
             summary = self.metrics.summary(self.step_count)
             summary.update(self.agent.step_size_summary())
+            summary.update(self.agent.exploration_summary())
             frozen_policy = self.agent.freeze_policy_matrix(
                 self.environment.width, self.environment.height, self.environment.goal
             )

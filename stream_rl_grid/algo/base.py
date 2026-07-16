@@ -46,9 +46,13 @@ class BaseControlAgent(ABC):
     def probabilities_from_values(self, values: Sequence[float]) -> np.ndarray:
         values = np.asarray(values, dtype=np.float64)
         best = np.flatnonzero(np.isclose(values, values.max(), rtol=1e-12, atol=1e-12))
-        probabilities = np.full(5, self.config.epsilon / 5.0, dtype=np.float64)
-        probabilities[best] += (1.0 - self.config.epsilon) / len(best)
+        epsilon = self.epsilon
+        probabilities = np.full(5, epsilon / 5.0, dtype=np.float64)
+        probabilities[best] += (1.0 - epsilon) / len(best)
         return probabilities
+
+    def exploration_summary(self) -> Dict[str, float]:
+        return {"epsilon": float(self.epsilon)}
 
     def action_probabilities(self, observation: Sequence[int], readonly: bool = True) -> np.ndarray:
         return self.probabilities_from_values(self.action_values(observation, readonly=readonly))
