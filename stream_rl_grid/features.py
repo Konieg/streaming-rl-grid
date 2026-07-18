@@ -10,15 +10,23 @@ from .tile_coder import DualTileCoder
 
 TILE_CODING = "tile_coding"
 HANDCRAFTED_LFA = "handcrafted_lfa"
-FEATURE_REPRESENTATIONS = (TILE_CODING, HANDCRAFTED_LFA)
+HANDCRAFTED_LFA_NUISANCE = "handcrafted_lfa_nuisance"
+FEATURE_REPRESENTATIONS = (
+    TILE_CODING,
+    HANDCRAFTED_LFA,
+    HANDCRAFTED_LFA_NUISANCE,
+)
 FEATURE_REPRESENTATION_LABELS = {
     TILE_CODING: "Tile coding",
     HANDCRAFTED_LFA: "Hand-crafted linear features (D=55)",
+    HANDCRAFTED_LFA_NUISANCE: "Hand-crafted + nuisance features (D=71)",
 }
 
 NUM_ACTIONS = 5
 BASES_PER_ACTION = 11
 BASE_DIMENSION = BASES_PER_ACTION * NUM_ACTIONS
+NUISANCE_DIMENSION = 16
+SELECTION_DIMENSION = BASE_DIMENSION + NUISANCE_DIMENSION
 
 
 class GridFeatureEncoder:
@@ -107,6 +115,59 @@ class GridFeatureEncoder:
             raise ValueError("Checkpoint feature representation does not match.")
 
 
+class NuisanceFeatureEncoder(GridFeatureEncoder):
+    """Collaborator's D=71 extension with independent one-hot nuisance input.
+
+    The trainer appends the current nuisance index to the ordinary five-value
+    environment observation.  Sharing that index across candidate actions is
+    important: it makes it an observed input at one stream time, rather than a
+    fresh random draw for every value-function query.
+    """
+
+    dimension = SELECTION_DIMENSION
+    size = SELECTION_DIMENSION
+    representation_name = HANDCRAFTED_LFA_NUISANCE
+    requires_nuisance = True
+
+    def __init__(self, width: int, height: int):
+        super().__init__(width, height)
+        self.groups = np.concatenate(
+            [self.groups, np.full(NUISANCE_DIMENSION, "nuisance", dtype="U32")]
+        )
+        self.names = self.names + tuple(
+            "nuisance/%d" % index for index in range(NUISANCE_DIMENSION)
+        )
+
+    @staticmethod
+    def _nuisance_index(observation: Sequence[int]) -> int:
+        if len(observation) < 6:
+            raise ValueError(
+                "D=71 features require a nuisance index appended to the observation."
+            )
+        index = int(observation[5])
+        if not 0 <= index < NUISANCE_DIMENSION:
+            raise ValueError("nuisance index must be in [0, 15]")
+        return index
+
+    def encode(self, observation: Sequence[int], action: int) -> np.ndarray:
+        features = np.zeros(self.dimension, dtype=np.float64)
+        features[:BASE_DIMENSION] = super().encode(observation, action)
+        features[BASE_DIMENSION + self._nuisance_index(observation)] = 1.0
+        return features / np.sqrt(2.0)
+
+    def feature_values(
+        self, observation: Sequence[int], action: int, readonly: bool = False
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        del readonly
+        main_indices, main_values = super().feature_values(observation, action)
+        nuisance_index = BASE_DIMENSION + self._nuisance_index(observation)
+        indices = np.concatenate(
+            [main_indices, np.asarray([nuisance_index], dtype=np.int64)]
+        )
+        values = np.concatenate([main_values, np.asarray([1.0])]) / np.sqrt(2.0)
+        return indices, values
+
+
 def create_feature_representation(
     env_config: EnvironmentConfig, agent_config: AgentConfig
 ):
@@ -114,6 +175,8 @@ def create_feature_representation(
         return DualTileCoder(env_config, agent_config)
     if agent_config.feature_representation == HANDCRAFTED_LFA:
         return GridFeatureEncoder(env_config.width, env_config.height)
+    if agent_config.feature_representation == HANDCRAFTED_LFA_NUISANCE:
+        return NuisanceFeatureEncoder(env_config.width, env_config.height)
     raise ValueError(
         "Unknown feature representation: %s" % agent_config.feature_representation
     )

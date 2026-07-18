@@ -66,6 +66,12 @@ class GuiSnapshotDeliveryTests(unittest.TestCase):
                     )),
                     common | extras,
                 )
+                self.assertEqual(
+                    set(TrainingPanel.agent_fields_for_algorithm(
+                        algorithm, "handcrafted_lfa_nuisance"
+                    )),
+                    common | extras,
+                )
 
     def test_goal_reached_gui_label_maps_to_config_key(self):
         panel = TrainingPanel.__new__(TrainingPanel)

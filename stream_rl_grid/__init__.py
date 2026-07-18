@@ -2,7 +2,9 @@
 
 from .config import AgentConfig, AppConfig, EnvironmentConfig, TrainingConfig
 from .environment import ACTION_NAMES, ACTIONS, NO_ACTION, ContinualWindyGridWorld
-from .features import GridFeatureEncoder, create_feature_representation
+from .features import (
+    GridFeatureEncoder, NuisanceFeatureEncoder, create_feature_representation,
+)
 from .trainer import Trainer
 
 __all__ = [
@@ -14,6 +16,7 @@ __all__ = [
     "ContinualWindyGridWorld",
     "EnvironmentConfig",
     "GridFeatureEncoder",
+    "NuisanceFeatureEncoder",
     "TrainingConfig",
     "Trainer",
     "create_feature_representation",

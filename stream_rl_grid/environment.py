@@ -212,18 +212,25 @@ class ContinualWindyGridWorld:
         self.last_events = ["manual_environment_update"]
 
     def _advance_schedules(self, skip_goal_move: bool = False) -> None:
-        if self.config.wind_changes and self.step_count % self.config.wind_period == 0:
+        if self.config.wind_changes and self._schedule_due(
+            self.config.wind_start_step, self.config.wind_period
+        ):
             self.wind_phase = (self.wind_phase + 1) % len(WIND_DIRECTIONS)
             self.last_events.append("wind_phase:%d" % self.wind_phase)
 
-        if self.config.reward_changes and self.step_count % self.config.reward_period == 0:
+        if self.config.reward_changes and self._schedule_due(
+            self.config.reward_start_step, self.config.reward_period
+        ):
             self.reward_phase = (self.reward_phase + 1) % len(WIND_DIRECTIONS)
             self.last_events.append("reward_phase:%d" % self.reward_phase)
 
         if (
             not skip_goal_move
             and self.config.goal_moves
-            and self.step_count % self.config.target_move_interval == 0
+            and self._schedule_due(
+                self.config.target_move_start_step,
+                self.config.target_move_interval,
+            )
         ):
             old_goal = self.goal
             self._move_goal_to_next_legal_waypoint()
@@ -232,7 +239,10 @@ class ContinualWindyGridWorld:
 
         if (
             self.config.obstacle_switches
-            and self.step_count % self.config.context_switch_interval == 0
+            and self._schedule_due(
+                self.config.context_switch_start_step,
+                self.config.context_switch_interval,
+            )
         ):
             self.context_index = (self.context_index + 1) % len(self.context_maps)
             raw_obstacles = self.context_maps[self.context_index]
@@ -244,6 +254,10 @@ class ContinualWindyGridWorld:
                     )
                 self._move_goal_to_next_legal_waypoint()
             self.last_events.append("context:%d" % self.context_index)
+
+    def _schedule_due(self, start_step: Optional[int], period: int) -> bool:
+        first = int(period if start_step is None else start_step)
+        return self.step_count >= first and (self.step_count - first) % int(period) == 0
 
     def _move_goal_to_next_legal_waypoint(self) -> None:
         n = len(self.goal_path)

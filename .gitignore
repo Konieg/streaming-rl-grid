@@ -6,4 +6,5 @@ __pycache__/
 checkpoints/
 runs/
 benchmark_results/
+experiment_results/
 *.log

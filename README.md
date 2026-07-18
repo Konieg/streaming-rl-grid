@@ -218,8 +218,9 @@ wind direction on each transition.
 
 ## Selectable feature representations
 
-`AgentConfig.feature_representation` selects either `"tile_coding"` (the default)
-or `"handcrafted_lfa"`. The GUI exposes the same choice and hides tile-only
+`AgentConfig.feature_representation` selects `"tile_coding"` (the default),
+`"handcrafted_lfa"`, or `"handcrafted_lfa_nuisance"`. The GUI exposes the same
+choices and hides tile-only
 parameters when the D=55 representation is selected. Headless runs can select it with:
 
 ```powershell
@@ -239,5 +240,60 @@ then placed in the selected action's block, giving `11 * 5 = 55` weights. The
 `previous_action` observation component is intentionally ignored. Because this feature
 vector has unit norm, `effective_initial_step` is used directly; tile coding continues
 to divide it by its nominal active-feature count.
+
+The D=71 option is the collaborator's controlled nuisance-feature extension. At each
+stream time, a dedicated RNG independently samples one of 16 nuisance categories. Its
+one-hot feature is appended to the D=55 vector and the combined vector is divided by
+`sqrt(2)`, preserving unit norm. The same sampled category is used for every candidate
+action at that time. Its RNG is checkpointed and is independent of environment,
+epsilon-greedy, and Dyna-planning randomness.
+
+```powershell
+python -m stream_rl_grid.cli --features handcrafted_lfa_nuisance --algorithm tidbd --steps 50000
+```
+
+## Phase-one D=55 sweep (945 runs)
+
+The phase-one comparison fixes the `handcrafted_lfa` D=55 representation for every
+algorithm, including TIDBD. It expands 63 parameter configurations over three
+non-stationary settings and five paired seeds, for exactly 945 independent 60,000-step
+runs. From the repository root, start the complete resumable sweep once with:
+
+```powershell
+python run_phase1_sweep.py
+```
+
+Results are written under `experiment_results/phase1_d55`. Four workers are used by
+default when the machine has enough logical CPUs; override this with `--workers N`.
+Every active run overwrites `progress.pkl` every 5,000 steps. Re-running the same
+command skips completed jobs, truncates any CSV rows beyond the last safe checkpoint,
+and resumes unfinished jobs exactly.
+
+Each run writes:
+
+- `metrics.csv`: trailing reward, exact cumulative reward AUC, exact stream-average
+  reward, interval reward, TD error, goal/collision rates, alpha diagnostics, and
+  environment events;
+- `events.csv`: exact pre-change baseline, fixed-window post-change reward/AUC, and
+  recovery time for every external change;
+- `summary.json`: final metrics, event aggregates, parameters, and run status;
+- `config.json`: the complete serialized run configuration.
+
+The common schedule has a 6,000-step period per factor, with staggered first changes:
+wind at 5,500, goal at 7,000, obstacles at 8,500, and reward at 10,000. Thus no two
+external factors change on the same step. Environment maps, goal paths, and event
+timings are stored in `experiment_manifest.json` and reused across algorithms.
+
+After all runs finish, aggregate the CSV files, select the best configuration of each
+algorithm by mean exact stream-average reward, and generate figures with colored
+vertical change lines using:
+
+```powershell
+python plot_phase1_results.py
+```
+
+This creates `aggregate_summary.csv`, `selected_configs.csv`, three learning-curve
+figures, and three adaptation-metric figures. Plotting is intentionally separate from
+the GUI and from training.
 
 测试覆盖各算法的 bootstrap target、Watkins trace cutting、Dyna planning、continuing 目标传送、碰撞回退、`stay` 的风效应、地图切换延迟障碍物、TIDBD 数值有限性，以及 checkpoint 后的精确续训。

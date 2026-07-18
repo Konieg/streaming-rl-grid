@@ -15,6 +15,7 @@ from .config import AppConfig
 from .environment import ACTION_NAMES, ContinualWindyGridWorld
 from .metrics import MetricsTracker
 from .features import create_feature_representation
+from .features import NUISANCE_DIMENSION
 
 
 class Trainer:
@@ -26,6 +27,9 @@ class Trainer:
         self.run_id = run_id or datetime.now().strftime("%Y%m%d-%H%M%S")
         self.environment = ContinualWindyGridWorld(config.environment)
         self.coder = create_feature_representation(config.environment, config.agent)
+        # This stream is deliberately separate from environment, behavior-policy,
+        # and Dyna RNGs so nuisance inputs cannot shift any experimental event.
+        self.feature_rng = np.random.default_rng(config.environment.seed + 30_000)
         self.agent = create_agent(
             self.coder,
             config.agent,
@@ -36,8 +40,15 @@ class Trainer:
             config.training.metric_window,
             config.training.chart_points,
             config.training.ui_update_steps,
+            config.training.record_step_metrics,
+            config.training.post_change_window,
+            config.training.recovery_smoothing,
+            config.training.recovery_tolerance,
+            config.training.recovery_horizon,
         )
-        self.current_observation = self.environment.observation()
+        self.current_observation = self._feature_observation(
+            self.environment.observation()
+        )
         self.current_action = self.agent.select_action(self.current_observation)
         self.last_info: Dict[str, Any] = {}
         self.last_reward = 0.0
@@ -49,7 +60,8 @@ class Trainer:
         return self.environment.step_count
 
     def step_once(self, with_snapshot: bool = True) -> Dict[str, Any]:
-        next_observation, reward, terminated, truncated, info = self.environment.step(self.current_action)
+        raw_next_observation, reward, terminated, truncated, info = self.environment.step(self.current_action)
+        next_observation = self._feature_observation(raw_next_observation)
         if terminated or truncated:
             raise RuntimeError("The continuing environment must never terminate or truncate.")
         delta, next_action = self.agent.learn_and_select_next(
@@ -152,15 +164,30 @@ class Trainer:
                     "num_contexts", "wind_changes", "goal_moves", "obstacle_switches",
                     "reward_changes", "reward_goal", "reward_collision", "reward_step",
                     "w_strength", "wind_period", "reward_period", "target_move_interval",
-                    "context_switch_interval",
+                    "context_switch_interval", "wind_start_step", "reward_start_step",
+                    "target_move_start_step", "context_switch_start_step",
                     "goal_reached_behavior",
                 ):
                     setattr(self.environment.config, name, getattr(environment_config, name))
             self.environment.apply_manual_configuration(
                 obstacles, start, goal, wind_direction, replace_maps=replace_maps
             )
-            self.current_observation = self.environment.observation()
+            nuisance_index = (
+                int(self.current_observation[5])
+                if getattr(self.coder, "requires_nuisance", False) else None
+            )
+            self.current_observation = self._feature_observation(
+                self.environment.observation(), nuisance_index=nuisance_index
+            )
             return self.snapshot()
+
+    def _feature_observation(self, observation, nuisance_index=None):
+        result = tuple(int(value) for value in observation)
+        if not getattr(self.coder, "requires_nuisance", False):
+            return result
+        if nuisance_index is None:
+            nuisance_index = int(self.feature_rng.integers(NUISANCE_DIMENSION))
+        return result + (int(nuisance_index),)
 
     def apply_wind(self, direction: str, strength: float) -> Dict[str, Any]:
         """Change wind atomically without moving the agent or altering the map."""
@@ -198,6 +225,7 @@ class Trainer:
             "last_reward": self.last_reward,
             "python_random_state": random.getstate(),
             "numpy_legacy_random_state": np.random.get_state(),
+            "feature_rng_state": self.feature_rng.bit_generator.state,
         }
 
     @classmethod
@@ -217,6 +245,8 @@ class Trainer:
         trainer.metrics.load_state_dict(state["metrics"])
         trainer.current_observation = tuple(state["current_observation"])
         trainer.current_action = int(state["current_action"])
+        if "feature_rng_state" in state:
+            trainer.feature_rng.bit_generator.state = state["feature_rng_state"]
         trainer.last_info = dict(state["last_info"])
         trainer.last_reward = float(state["last_reward"])
         random.setstate(state["python_random_state"])
@@ -241,10 +271,17 @@ class Trainer:
                     "absolute_position", "relative_goal", "categorical_bias"
                 ],
             })
-        else:
+        elif self.config.agent.feature_representation == "handcrafted_lfa":
             signature.update({
                 "dimension": self.coder.size,
                 "feature_groups": ["absolute_position", "relative_goal"],
+            })
+        else:
+            signature.update({
+                "dimension": self.coder.size,
+                "feature_groups": [
+                    "absolute_position", "relative_goal", "nuisance"
+                ],
             })
         return signature
 
@@ -254,6 +291,8 @@ class Trainer:
         with self._log_path.open("a", newline="", encoding="utf-8") as handle:
             fieldnames = [
                 "step", "reward", "average_reward", "reward_rate", "abs_td_error",
+                "reward_auc", "stream_average_reward", "interval_reward_sum",
+                "interval_reward_count", "interval_average_reward",
                 "goals_per_1000_steps", "collision_rate", "alpha_min", "alpha_mean",
                 "alpha_max", "delta", "context", "wind_phase", "goal_x", "goal_y", "events",
             ]
@@ -268,6 +307,11 @@ class Trainer:
                     "average_reward": summary["average_reward"],
                     "reward_rate": self.agent.reward_rate,
                     "abs_td_error": summary["abs_td_error"],
+                    "reward_auc": summary["reward_auc"],
+                    "stream_average_reward": summary["stream_average_reward"],
+                    "interval_reward_sum": summary["interval_reward_sum"],
+                    "interval_reward_count": int(summary["interval_reward_count"]),
+                    "interval_average_reward": summary["interval_average_reward"],
                     "goals_per_1000_steps": summary["goals_per_1000_steps"],
                     "collision_rate": summary["collision_rate"],
                     "alpha_min": alpha["alpha_min"],

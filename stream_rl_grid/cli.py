@@ -24,6 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reward-period", type=int, default=2_000)
     parser.add_argument("--target-move-interval", type=int, default=500)
     parser.add_argument("--context-switch-interval", type=int, default=3_000)
+    parser.add_argument("--wind-start-step", type=int)
+    parser.add_argument("--reward-start-step", type=int)
+    parser.add_argument("--target-move-start-step", type=int)
+    parser.add_argument("--context-switch-start-step", type=int)
     parser.add_argument("--num-contexts", type=int, default=3)
     parser.add_argument("--wind-direction", choices=WIND_CHOICES, default="none")
     parser.add_argument("--wind-strength", type=float, default=0.3)
@@ -69,6 +73,10 @@ def main() -> None:
         config.environment.reward_period = args.reward_period
         config.environment.target_move_interval = args.target_move_interval
         config.environment.context_switch_interval = args.context_switch_interval
+        config.environment.wind_start_step = args.wind_start_step
+        config.environment.reward_start_step = args.reward_start_step
+        config.environment.target_move_start_step = args.target_move_start_step
+        config.environment.context_switch_start_step = args.context_switch_start_step
         config.environment.num_contexts = args.num_contexts
         config.environment.manual_wind_direction = args.wind_direction
         config.environment.w_strength = args.wind_strength

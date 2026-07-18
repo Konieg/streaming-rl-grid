@@ -226,6 +226,26 @@ class EnvironmentTests(unittest.TestCase):
                 self.assertEqual(env.context_index == 1, obstacle_switches)
                 self.assertEqual(env.goal != old_goal, goal_moves)
 
+    def test_schedule_start_offsets_delay_and_then_repeat_changes(self):
+        env = self.make_env(
+            wind_changes=True,
+            reward_changes=True,
+            wind_period=4,
+            reward_period=4,
+            wind_start_step=3,
+            reward_start_step=5,
+        )
+        wind_steps = []
+        reward_steps = []
+        for _ in range(10):
+            env.step(4)
+            if any(event.startswith("wind_phase:") for event in env.last_events):
+                wind_steps.append(env.step_count)
+            if any(event.startswith("reward_phase:") for event in env.last_events):
+                reward_steps.append(env.step_count)
+        self.assertEqual(wind_steps, [3, 7])
+        self.assertEqual(reward_steps, [5, 9])
+
     def test_reward_changes_without_changing_transition_schedules(self):
         env = self.make_env(reward_changes=True, reward_period=1)
         env.agent_state = (1, 1)

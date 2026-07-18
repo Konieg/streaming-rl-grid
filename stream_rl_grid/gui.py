@@ -40,6 +40,7 @@ class TrainingPanel:
     REPRESENTATION_CONFIG_FIELDS = {
         "tile_coding": ("num_tilings", "tiles_per_dimension", "iht_size"),
         "handcrafted_lfa": (),
+        "handcrafted_lfa_nuisance": (),
     }
     AGENT_FIELD_ORDER = (
         "feature_representation", "num_tilings", "tiles_per_dimension", "iht_size",

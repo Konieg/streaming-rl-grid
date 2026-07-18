@@ -5,7 +5,9 @@ from typing import Any, Dict, List, Optional
 
 from .algo import ALGORITHMS
 
-FEATURE_REPRESENTATIONS = ("tile_coding", "handcrafted_lfa")
+FEATURE_REPRESENTATIONS = (
+    "tile_coding", "handcrafted_lfa", "handcrafted_lfa_nuisance",
+)
 
 WIND_CHOICES = ("up", "right", "down", "left", "none")
 GOAL_REACHED_BEHAVIORS = ("random_agent_restart", "relocate_target")
@@ -34,6 +36,10 @@ class EnvironmentConfig:
     reward_period: int = 2_000
     target_move_interval: int = 500
     context_switch_interval: int = 3_000
+    wind_start_step: Optional[int] = None
+    reward_start_step: Optional[int] = None
+    target_move_start_step: Optional[int] = None
+    context_switch_start_step: Optional[int] = None
     obstacle_coordinates: Optional[List[List[int]]] = field(
         default_factory=lambda: [[0, 3], [2, 2], [4, 3]]
     )
@@ -84,6 +90,13 @@ class EnvironmentConfig:
         ):
             if getattr(self, name) <= 0:
                 raise ValueError("%s must be positive." % name)
+        for name in (
+            "wind_start_step", "reward_start_step", "target_move_start_step",
+            "context_switch_start_step",
+        ):
+            value = getattr(self, name)
+            if value is not None and value <= 0:
+                raise ValueError("%s must be positive when provided." % name)
 
 
 @dataclass
@@ -141,11 +154,23 @@ class TrainingConfig:
     auto_checkpoint_steps: int = 10_000
     checkpoint_dir: str = "checkpoints"
     log_dir: str = "runs"
+    record_step_metrics: bool = False
+    post_change_window: int = 1_000
+    recovery_smoothing: int = 250
+    recovery_tolerance: float = 0.10
+    recovery_horizon: int = 5_000
 
     def validate(self) -> None:
         for name in ("metric_window", "chart_points", "ui_update_steps", "auto_checkpoint_steps"):
             if getattr(self, name) <= 0:
                 raise ValueError("%s must be positive." % name)
+        for name in (
+            "post_change_window", "recovery_smoothing", "recovery_horizon",
+        ):
+            if getattr(self, name) <= 0:
+                raise ValueError("%s must be positive." % name)
+        if self.recovery_tolerance < 0.0:
+            raise ValueError("recovery_tolerance cannot be negative.")
 
 
 @dataclass

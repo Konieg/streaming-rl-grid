@@ -6,7 +6,11 @@ import numpy as np
 
 from stream_rl_grid.algo import DifferentialQLearning, create_agent
 from stream_rl_grid.config import AgentConfig, AppConfig
-from stream_rl_grid.features import GridFeatureEncoder
+from stream_rl_grid.features import (
+    BASE_DIMENSION,
+    GridFeatureEncoder,
+    NuisanceFeatureEncoder,
+)
 from stream_rl_grid.trainer import Trainer
 
 
@@ -103,6 +107,70 @@ class HandcraftedFeatureTests(unittest.TestCase):
                 self.assertTrue(np.isfinite(delta))
                 self.assertTrue(np.all(np.isfinite(agent.weights)))
                 self.assertEqual(agent.weights.shape, (55,))
+
+    def test_d71_matches_collaborator_nuisance_definition_exactly(self):
+        encoder = NuisanceFeatureEncoder(5, 5)
+        observation = self.observation + (7,)
+        features = encoder.encode(observation, 3)
+        main = GridFeatureEncoder(5, 5).encode(self.observation, 3)
+        expected = np.zeros(71)
+        expected[:55] = main
+        expected[BASE_DIMENSION + 7] = 1.0
+        expected /= np.sqrt(2.0)
+
+        np.testing.assert_array_equal(features, expected)
+        self.assertEqual(features.shape, (71,))
+        self.assertAlmostEqual(float(np.linalg.norm(features)), 1.0)
+        self.assertEqual(encoder.groups[BASE_DIMENSION + 7], "nuisance")
+        self.assertLessEqual(int(np.count_nonzero(features)), 12)
+
+    def test_d71_training_uses_independent_stream_and_restores_exactly(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as folder:
+            config = AppConfig()
+            config.agent.algorithm = "dyna_q_lambda"
+            config.agent.feature_representation = "handcrafted_lfa_nuisance"
+            config.agent.planning_steps = 2
+            config.environment.obstacle_coordinates = None
+            config.training.ui_update_steps = 5
+            config.training.auto_checkpoint_steps = 1_000_000
+            trainer = Trainer(config, base_dir=folder, run_id="d71")
+            trainer.run_steps(45)
+            self.assertEqual(trainer.agent.weights.shape, (71,))
+            self.assertEqual(trainer.snapshot()["feature_dimension"], 71)
+            self.assertEqual(len(trainer.current_observation), 6)
+            path = trainer.save(Path(folder) / "d71.pkl")
+
+            trainer.run_steps(20)
+            expected_weights = trainer.agent.weights.copy()
+            expected_observation = trainer.current_observation
+            expected_model = trainer.agent.state_dict()["model"]
+            restored = Trainer.from_checkpoint(path, base_dir=folder)
+            restored.run_steps(20)
+
+            np.testing.assert_array_equal(restored.agent.weights, expected_weights)
+            self.assertEqual(restored.current_observation, expected_observation)
+            self.assertEqual(restored.agent.state_dict()["model"], expected_model)
+
+    def test_every_registered_algorithm_accepts_d71_features(self):
+        state = (0, 0, 4, 4, 0, 3)
+        next_state = (1, 0, 4, 4, 1, 12)
+        for algorithm in (
+            "q_learning", "q_lambda", "sarsa", "dyna_q", "dyna_q_lambda",
+            "tidbd",
+        ):
+            with self.subTest(algorithm=algorithm):
+                config = AgentConfig(
+                    algorithm=algorithm,
+                    feature_representation="handcrafted_lfa_nuisance",
+                    planning_steps=2,
+                )
+                encoder = NuisanceFeatureEncoder(5, 5)
+                agent = create_agent(encoder, config)
+                next_action = 1 if agent.samples_next_action_before_update else None
+                delta = agent.update(state, 0, -1.0, next_state, next_action)
+                self.assertTrue(np.isfinite(delta))
+                self.assertTrue(np.all(np.isfinite(agent.weights)))
+                self.assertEqual(agent.weights.shape, (71,))
 
 
 if __name__ == "__main__":

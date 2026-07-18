@@ -125,7 +125,7 @@ class BaseControlAgent(ABC):
         gx, gy = int(goal[0]), int(goal[1])
         observations_by_state: Dict[StateKey, list] = {}
         for observation, count in self.observation_counts.items():
-            x, y, seen_gx, seen_gy, _ = observation
+            x, y, seen_gx, seen_gy = observation[:4]
             observations_by_state.setdefault((x, y, seen_gx, seen_gy), []).append((observation, count))
 
         matrix = np.full(
