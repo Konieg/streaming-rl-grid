@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from .config import ALGORITHMS, AppConfig, PROFILES
+from .config import ALGORITHMS, AppConfig, GOAL_REACHED_BEHAVIORS, PROFILES
 from .trainer import Trainer
 
 
@@ -22,6 +22,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Deprecated alias for --algorithm sarsa",
     )
     parser.add_argument("--planning-steps", type=int, default=5)
+    parser.add_argument(
+        "--goal-reached-behavior",
+        choices=GOAL_REACHED_BEHAVIORS,
+        default="random_agent_restart",
+    )
     parser.add_argument("--report-every", type=int, default=1_000)
     return parser
 
@@ -40,6 +45,7 @@ def main() -> None:
         config.environment.height = args.height
         config.environment.obstacle_count = args.obstacles
         config.environment.obstacle_coordinates = None
+        config.environment.goal_reached_behavior = args.goal_reached_behavior
         config.agent.algorithm = "sarsa" if args.fixed_alpha else args.algorithm
         config.agent.planning_steps = args.planning_steps
         trainer = Trainer(config, base_dir=base_dir)

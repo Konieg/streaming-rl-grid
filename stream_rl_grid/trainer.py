@@ -145,6 +145,7 @@ class Trainer:
                 for name in (
                     "profile", "num_contexts", "reward_goal", "reward_collision", "reward_step",
                     "w_strength", "wind_period", "target_move_interval", "context_switch_interval",
+                    "goal_reached_behavior",
                 ):
                     setattr(self.environment.config, name, getattr(environment_config, name))
             self.environment.apply_manual_configuration(

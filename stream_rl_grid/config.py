@@ -7,6 +7,11 @@ from .algo import ALGORITHMS
 
 PROFILES = ("stationary", "seasonal_wind", "moving_goal", "hidden_context", "combined", "customize")
 WIND_CHOICES = ("auto", "up", "right", "down", "left", "none")
+GOAL_REACHED_BEHAVIORS = ("random_agent_restart", "relocate_target")
+GOAL_REACHED_BEHAVIOR_LABELS = {
+    "random_agent_restart": "Randomize agent position",
+    "relocate_target": "Relocate target; keep agent",
+}
 
 
 @dataclass
@@ -32,6 +37,7 @@ class EnvironmentConfig:
     start_position: Optional[List[int]] = field(default_factory=lambda: [0, 0])
     goal_position: Optional[List[int]] = field(default_factory=lambda: [4, 4])
     manual_wind_direction: str = "none"
+    goal_reached_behavior: str = "random_agent_restart"
 
     def validate(self) -> None:
         if self.width < 3 or self.height < 3:
@@ -53,6 +59,10 @@ class EnvironmentConfig:
             raise ValueError("w_strength must lie in [0, 1].")
         if self.manual_wind_direction not in WIND_CHOICES:
             raise ValueError("Unknown wind direction: %s" % self.manual_wind_direction)
+        if self.goal_reached_behavior not in GOAL_REACHED_BEHAVIORS:
+            raise ValueError(
+                "Unknown goal-reached behavior: %s" % self.goal_reached_behavior
+            )
         for name in ("start_position", "goal_position"):
             point = getattr(self, name)
             if point is not None:

@@ -2,7 +2,16 @@ import threading
 import unittest
 
 from stream_rl_grid.algo import ALGORITHM_LABELS
+from stream_rl_grid.config import GOAL_REACHED_BEHAVIOR_LABELS
 from stream_rl_grid.gui import TrainingPanel
+
+
+class FakeVariable:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
 
 
 class GuiSnapshotDeliveryTests(unittest.TestCase):
@@ -36,6 +45,17 @@ class GuiSnapshotDeliveryTests(unittest.TestCase):
                     set(TrainingPanel.agent_fields_for_algorithm(algorithm)),
                     common | extras,
                 )
+
+    def test_goal_reached_gui_label_maps_to_config_key(self):
+        panel = TrainingPanel.__new__(TrainingPanel)
+        panel.variables = {
+            "goal_reached_behavior": FakeVariable(
+                GOAL_REACHED_BEHAVIOR_LABELS["relocate_target"]
+            )
+        }
+        self.assertEqual(
+            panel._selected_goal_reached_behavior(), "relocate_target"
+        )
 
 
 if __name__ == "__main__":

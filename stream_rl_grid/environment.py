@@ -120,15 +120,26 @@ class ContinualWindyGridWorld:
         if self.dormant_obstacle is not None and self.agent_state != self.dormant_obstacle:
             self.dormant_obstacle = None
 
+        goal_event = None
+        relocate_target_after_schedules = False
         if reached_goal:
-            self.agent_state = self._restart_state()
+            if self.config.goal_reached_behavior == "relocate_target":
+                relocate_target_after_schedules = True
+                goal_event = "target_relocated_after_goal"
+            else:
+                self.agent_state = self._restart_state()
+                goal_event = "agent_restarted_after_goal"
             if self.dormant_obstacle is not None and self.agent_state != self.dormant_obstacle:
                 self.dormant_obstacle = None
 
         self.previous_action = action
         self.step_count += 1
         self.last_events = []
-        self._advance_schedules()
+        self._advance_schedules(skip_goal_move=relocate_target_after_schedules)
+        if relocate_target_after_schedules:
+            self._relocate_goal_randomly()
+        if goal_event is not None:
+            self.last_events.insert(0, goal_event)
         info = self._info(collision, reached_goal, wind)
         info["state_before"] = before
         info["state_after_dynamics"] = candidate
@@ -200,14 +211,18 @@ class ContinualWindyGridWorld:
         self.dormant_obstacle = self.agent_state if self.agent_state in self.context_maps[self.context_index] else None
         self.last_events = ["manual_environment_update"]
 
-    def _advance_schedules(self) -> None:
+    def _advance_schedules(self, skip_goal_move: bool = False) -> None:
         profile = self.config.profile
         if profile in ("seasonal_wind", "combined") and self.step_count % self.config.wind_period == 0:
             self.wind_phase = (self.wind_phase + 1) % len(WIND_DIRECTIONS)
             self.reward_phase = self.wind_phase
             self.last_events.append("season:%d" % self.wind_phase)
 
-        if profile in ("moving_goal", "combined") and self.step_count % self.config.target_move_interval == 0:
+        if (
+            not skip_goal_move
+            and profile in ("moving_goal", "combined")
+            and self.step_count % self.config.target_move_interval == 0
+        ):
             old_goal = self.goal
             self._move_goal_to_next_legal_waypoint()
             if self.goal != old_goal:
@@ -341,9 +356,14 @@ class ContinualWindyGridWorld:
         return self._random_legal_state(exclude={self.goal})
 
     def _restart_state(self) -> Coord:
-        if self.start_position != self.goal and self.start_position not in self.active_obstacles:
-            return self.start_position
+        """Sample a fresh legal non-goal position after a rewarded goal transition."""
         return self._random_legal_state(exclude={self.goal})
+
+    def _relocate_goal_randomly(self) -> None:
+        """Move the target while leaving the agent on the previously rewarded target cell."""
+        self.goal = self._random_legal_state(exclude={self.agent_state})
+        if self.goal in self.goal_path:
+            self.goal_path_index = self.goal_path.index(self.goal)
 
     def _random_legal_state(self, exclude: Optional[Set[Coord]] = None) -> Coord:
         excluded = set() if exclude is None else set(exclude)

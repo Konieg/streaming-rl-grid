@@ -77,7 +77,8 @@ $$
 - `stay` 仍然受到风的影响；
 - 主动动作和风的位移逐格执行；
 - 任一步碰到边界或障碍物，整个转移取消，智能体留在动作前的位置并得到碰撞惩罚；
-- 到达目标后得到目标奖励，并立即随机传送到合法非目标格；
+- 到达目标后得到目标奖励；默认将智能体立即随机传送到合法非目标格；
+- `After reaching target` 可切换为移动目标模式：目标随机迁移到另一个非障碍格，智能体留在旧目标格继续行动；
 - 环境始终返回 `terminated=False, truncated=False`；
 - 到达目标、风季节变化、目标移动和地图切换均不清空资格迹；
 - 地图切换时，如果智能体当前格在新地图中是障碍物，该障碍物暂不激活；智能体离开后立即激活。
@@ -145,6 +146,12 @@ python -m stream_rl_grid.cli --algorithm q_learning --steps 50000
 python -m stream_rl_grid.cli --algorithm q_lambda --steps 50000
 python -m stream_rl_grid.cli --algorithm sarsa --steps 50000
 python -m stream_rl_grid.cli --algorithm dyna_q --planning-steps 5 --steps 50000
+```
+
+切换到“目标迁移、智能体不瞬移”的到达目标逻辑：
+
+```powershell
+python -m stream_rl_grid.cli --goal-reached-behavior relocate_target --steps 50000
 ```
 
 ## 多随机种子验证

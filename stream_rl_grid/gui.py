@@ -13,7 +13,17 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 from .algo import ALGORITHM_CONFIG_FIELDS, ALGORITHM_LABELS
-from .config import ALGORITHMS, AgentConfig, AppConfig, EnvironmentConfig, PROFILES, TrainingConfig, WIND_CHOICES
+from .config import (
+    ALGORITHMS,
+    GOAL_REACHED_BEHAVIORS,
+    GOAL_REACHED_BEHAVIOR_LABELS,
+    AgentConfig,
+    AppConfig,
+    EnvironmentConfig,
+    PROFILES,
+    TrainingConfig,
+    WIND_CHOICES,
+)
 from .environment import ContinualWindyGridWorld
 from .trainer import Trainer
 
@@ -100,8 +110,16 @@ class TrainingPanel:
         self._add_entry(env_tab, "Wind/reward period", "wind_period", 14)
         self._add_entry(env_tab, "Goal move interval", "target_move_interval", 15)
         self._add_entry(env_tab, "Context switch interval", "context_switch_interval", 16)
+        goal_behavior_combo = self._add_combo(
+            env_tab,
+            "After reaching target",
+            "goal_reached_behavior",
+            tuple(GOAL_REACHED_BEHAVIOR_LABELS[name] for name in GOAL_REACHED_BEHAVIORS),
+            17,
+        )
+        goal_behavior_combo.configure(width=28)
         preview_row = ttk.Frame(env_tab)
-        preview_row.grid(row=17, column=0, columnspan=2, sticky="ew", padx=6, pady=8)
+        preview_row.grid(row=18, column=0, columnspan=2, sticky="ew", padx=6, pady=8)
         ttk.Button(preview_row, text="Generate maps", command=self.generate_preview).pack(side=tk.LEFT, expand=True, fill=tk.X)
         ttk.Button(preview_row, text="Prev map", command=lambda: self._change_preview_context(-1)).pack(side=tk.LEFT, padx=3)
         ttk.Button(preview_row, text="Next map", command=lambda: self._change_preview_context(1)).pack(side=tk.LEFT)
@@ -224,6 +242,15 @@ class TrainingPanel:
                 return name
         raise ValueError("Unknown training algorithm: %s" % selected)
 
+    def _selected_goal_reached_behavior(self) -> str:
+        selected = self.variables["goal_reached_behavior"].get()
+        if selected in GOAL_REACHED_BEHAVIORS:
+            return selected
+        for name, label in GOAL_REACHED_BEHAVIOR_LABELS.items():
+            if selected == label:
+                return name
+        raise ValueError("Unknown goal-reached behavior: %s" % selected)
+
     def _refresh_agent_fields(self, event=None) -> None:
         del event
         try:
@@ -250,6 +277,8 @@ class TrainingPanel:
                 value = values[key]
                 if key == "algorithm":
                     value = ALGORITHM_LABELS.get(value, value)
+                elif key == "goal_reached_behavior":
+                    value = GOAL_REACHED_BEHAVIOR_LABELS.get(value, value)
                 variable.set("" if value is None else value)
         self._refresh_agent_fields()
         maps = config.environment.context_maps or (
@@ -315,6 +344,7 @@ class TrainingPanel:
             goal_position=list(self._parse_coordinate(self.variables["goal_position"].get(), "Goal"))
             if self.variables["goal_position"].get().strip() else None,
             manual_wind_direction=self.variables["manual_wind_direction"].get(),
+            goal_reached_behavior=self._selected_goal_reached_behavior(),
             obstacle_coordinates=[list(point) for point in obstacles] if obstacles else None,
         )
         preview_matches = (

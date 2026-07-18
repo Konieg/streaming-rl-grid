@@ -1,6 +1,6 @@
 import unittest
 
-from stream_rl_grid.config import EnvironmentConfig
+from stream_rl_grid.config import EnvironmentConfig, PROFILES
 from stream_rl_grid.environment import ContinualWindyGridWorld
 
 
@@ -30,6 +30,53 @@ class EnvironmentTests(unittest.TestCase):
         self.assertFalse(truncated)
         self.assertNotEqual(env.agent_state, env.goal)
         self.assertEqual(observation[:4], env.observation()[:4])
+
+    def test_default_goal_restart_is_random_legal_in_every_profile(self):
+        obstacles = {(1, 1), (2, 2)}
+        for profile in PROFILES:
+            with self.subTest(profile=profile):
+                env = self.make_env(
+                    profile=profile,
+                    obstacle_count=len(obstacles),
+                    num_contexts=1,
+                    context_maps=[[list(point) for point in sorted(obstacles)]],
+                )
+                self.assertEqual(
+                    env.config.goal_reached_behavior, "random_agent_restart"
+                )
+                samples = {env._restart_state() for _ in range(100)}
+                self.assertGreater(len(samples), 1)
+                self.assertTrue(samples.isdisjoint(obstacles))
+                self.assertNotIn(env.goal, samples)
+
+    def test_relocate_target_keeps_agent_on_old_goal_in_every_profile(self):
+        obstacles = {(1, 1), (2, 2)}
+        for profile in PROFILES:
+            with self.subTest(profile=profile):
+                env = self.make_env(
+                    profile=profile,
+                    obstacle_count=len(obstacles),
+                    num_contexts=1,
+                    context_maps=[[list(point) for point in sorted(obstacles)]],
+                    goal_reached_behavior="relocate_target",
+                    target_move_interval=1,
+                )
+                old_goal = (3, 3)
+                env.goal = old_goal
+                env.agent_state = (2, 3)
+                observation, reward, terminated, truncated, info = env.step(1)
+
+                self.assertEqual(reward, env.config.reward_goal)
+                self.assertTrue(info["goal_reached"])
+                self.assertFalse(terminated)
+                self.assertFalse(truncated)
+                self.assertEqual(env.agent_state, old_goal)
+                self.assertNotEqual(env.goal, old_goal)
+                self.assertNotIn(env.goal, obstacles)
+                self.assertEqual(tuple(observation[:2]), old_goal)
+                self.assertEqual(tuple(observation[2:4]), env.goal)
+                self.assertIn("target_relocated_after_goal", info["events"])
+                self.assertNotIn("goal_moved", info["events"])
 
     def test_invalid_action_stays_and_receives_collision_reward(self):
         env = self.make_env()
