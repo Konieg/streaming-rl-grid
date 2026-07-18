@@ -5,6 +5,7 @@ from .registry import algorithm_config_fields, algorithm_labels, available_algor
 
 # Importing concrete modules performs their local registry declarations.
 from .dyna_q import DifferentialDynaQ
+from .dyna_q_lambda import DifferentialDynaQLambda
 from .q_lambda import DifferentialQLambda
 from .q_learning import DifferentialQLearning
 from .sarsa import DifferentialSarsa
@@ -22,6 +23,7 @@ __all__ = [
     "ALGORITHM_LABELS",
     "BaseControlAgent",
     "DifferentialDynaQ",
+    "DifferentialDynaQLambda",
     "DifferentialQLambda",
     "DifferentialQLearning",
     "DifferentialSarsa",

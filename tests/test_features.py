@@ -86,7 +86,10 @@ class HandcraftedFeatureTests(unittest.TestCase):
     def test_every_registered_algorithm_accepts_d55_features(self):
         state = (0, 0, 4, 4, 0)
         next_state = (1, 0, 4, 4, 1)
-        for algorithm in ("q_learning", "q_lambda", "sarsa", "dyna_q", "tidbd"):
+        for algorithm in (
+            "q_learning", "q_lambda", "sarsa", "dyna_q", "dyna_q_lambda",
+            "tidbd",
+        ):
             with self.subTest(algorithm=algorithm):
                 config = AgentConfig(
                     algorithm=algorithm,

@@ -7,8 +7,7 @@ from .algo import ALGORITHMS
 
 FEATURE_REPRESENTATIONS = ("tile_coding", "handcrafted_lfa")
 
-PROFILES = ("stationary", "seasonal_wind", "moving_goal", "hidden_context", "combined", "customize")
-WIND_CHOICES = ("auto", "up", "right", "down", "left", "none")
+WIND_CHOICES = ("up", "right", "down", "left", "none")
 GOAL_REACHED_BEHAVIORS = ("random_agent_restart", "relocate_target")
 GOAL_REACHED_BEHAVIOR_LABELS = {
     "random_agent_restart": "Randomize agent position",
@@ -22,13 +21,17 @@ class EnvironmentConfig:
     height: int = 5
     obstacle_count: int = 3
     num_contexts: int = 3
-    profile: str = "customize"
+    wind_changes: bool = False
+    goal_moves: bool = False
+    obstacle_switches: bool = False
+    reward_changes: bool = False
     seed: int = 0
     reward_goal: float = 10.0
     reward_collision: float = -5.0
     reward_step: float = -1.0
     w_strength: float = 0.3
     wind_period: int = 2_000
+    reward_period: int = 2_000
     target_move_interval: int = 500
     context_switch_interval: int = 3_000
     obstacle_coordinates: Optional[List[List[int]]] = field(
@@ -44,8 +47,6 @@ class EnvironmentConfig:
     def validate(self) -> None:
         if self.width < 3 or self.height < 3:
             raise ValueError("Grid width and height must both be at least 3.")
-        if self.profile not in PROFILES:
-            raise ValueError("Unknown non-stationarity profile: %s" % self.profile)
         if self.obstacle_count < 0 or self.obstacle_count > self.width * self.height - 2:
             raise ValueError("Obstacle count leaves fewer than two legal cells.")
         if self.context_maps is None and self.obstacle_coordinates is not None:
@@ -65,6 +66,10 @@ class EnvironmentConfig:
             raise ValueError(
                 "Unknown goal-reached behavior: %s" % self.goal_reached_behavior
             )
+        if self.goal_moves and self.goal_reached_behavior != "random_agent_restart":
+            raise ValueError(
+                "goal_moves requires random_agent_restart after reaching the target."
+            )
         for name in ("start_position", "goal_position"):
             point = getattr(self, name)
             if point is not None:
@@ -73,7 +78,10 @@ class EnvironmentConfig:
         if self.start_position is not None and self.goal_position is not None:
             if tuple(self.start_position) == tuple(self.goal_position):
                 raise ValueError("Start and goal coordinates must differ.")
-        for name in ("wind_period", "target_move_interval", "context_switch_interval"):
+        for name in (
+            "wind_period", "reward_period", "target_move_interval",
+            "context_switch_interval",
+        ):
             if getattr(self, name) <= 0:
                 raise ValueError("%s must be positive." % name)
 

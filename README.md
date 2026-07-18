@@ -1,11 +1,12 @@
 # stream-rl-grid
 
-一个面向持续学习实验的 Windy Grid World：每个真实转移即时更新、没有 batch、没有 episode 终止。智能体统一采用双组 tile coding 和 ε-greedy behavior policy，并提供：
+一个面向持续学习实验的 Windy Grid World：每个真实转移即时更新、没有 batch、没有 episode 终止。智能体可选择双组 tile coding 或 D=55 显式线性特征，并统一采用 ε-greedy behavior policy。项目提供：
 
 - Differential Q-learning；
 - Watkins's Differential Q(λ)；
 - Differential SARSA(λ)；
 - Differential Dyna-Q；
+- Differential Dyna-Q(λ)；
 - Differential SARSA(λ) + TIDBD。
 
 项目参考了：
@@ -30,7 +31,7 @@ $$delta = reward - R_bar + Q(next_state, next_action) - Q(state, action)$$
 
 $$ R_bar <- R_bar + eta * delta $$
 
-Differential Q-learning、Q(λ) 和 Dyna-Q 使用 off-policy greedy target：
+Differential Q-learning、Q(λ)、Dyna-Q 和 Dyna-Q(λ) 使用 off-policy greedy target：
 
 $$delta = reward - R_bar + max_a Q(next_state, a) - Q(state, action)$$
 
@@ -41,7 +42,7 @@ z <- lambda * z
 z[active_features] <- 1
 $$
 
-Q(λ) 采用 Watkins trace cutting：如果 behavior policy 选出的下一动作不是 greedy action，则在本次更新后清空资格迹。Dyna-Q 使用最新真实转移构成模型，每个真实步之后执行 `planning_steps` 次模型更新；平均奖励率只由真实转移更新。
+Q(λ) 和 Dyna-Q(λ) 采用 Watkins trace cutting：如果 behavior policy 选出的下一动作不是 greedy action，则在本次更新后清空资格迹。Dyna 的模型是从原始 `(observation, action)` 到最新 `(reward, next_observation)` 的表；每个真实步之后执行 `planning_steps` 次模型更新，平均奖励率只由真实转移更新。Dyna-Q(λ) 的资格迹只沿连续的真实经验流传播，随机抽取且彼此不连续的 planning samples 仍使用 one-step Q-learning。
 
 TIDBD 为每个权重维护 $`$beta_i = log(alpha_i)$`$ 和元迹 $H_i$：
 
@@ -85,13 +86,16 @@ $$
 
 ## Structured non-stationarity
 
-图形面板提供五种配置：
+环境不再使用互斥的 profile。GUI 和 `EnvironmentConfig` 提供四个完全独立、
+可以任意组合的开关：
 
-- `stationary`：固定风、目标、奖励和地图；
-- `seasonal_wind`：风向与奖励倍率按固定周期循环；
-- `moving_goal`：目标沿固定蛇形轨迹缓慢往返，遇到障碍物轨迹点则跳过；
-- `hidden_context`：障碍物地图按周期切换，但模式编号不提供给智能体；
-- `combined`：同时启用上述三类变化。
+- `wind_changes`：风向按 `wind_period` 在上、右、下、左之间循环；
+- `goal_moves`：目标按 `target_move_interval` 沿路径移动；
+- `obstacle_switches`：障碍物地图按 `context_switch_interval` 切换；
+- `reward_changes`：奖励倍率按独立的 `reward_period` 循环。
+
+四项默认全部关闭。未开启 `wind_changes` 时仍可配置固定风向；开启后固定风向
+设置被周期风向取代。风阶段与奖励阶段彼此独立，不再隐式绑定。
 
 地图生成器保证所有合法格连通。面板中可以先点击一个障碍物，再点击一个空格来移动障碍物；破坏连通性的修改会被拒绝。
 
@@ -118,13 +122,13 @@ python run_gui.py
 运行固定步数：
 
 ```powershell
-python -m stream_rl_grid.cli --profile combined --steps 50000
+python -m stream_rl_grid.cli --steps 50000
 ```
 
 无限运行，人工按 `Ctrl+C` 停止并自动保存：
 
 ```powershell
-python -m stream_rl_grid.cli --profile combined --steps 0
+python -m stream_rl_grid.cli --steps 0
 ```
 
 精确续训：
@@ -136,7 +140,7 @@ python -m stream_rl_grid.cli --resume checkpoints/<run-id>/step-000000050000.pkl
 固定步长基线：
 
 ```powershell
-python -m stream_rl_grid.cli --profile stationary --fixed-alpha --steps 50000
+python -m stream_rl_grid.cli --fixed-alpha --steps 50000
 ```
 
 选择其他算法：
@@ -146,6 +150,20 @@ python -m stream_rl_grid.cli --algorithm q_learning --steps 50000
 python -m stream_rl_grid.cli --algorithm q_lambda --steps 50000
 python -m stream_rl_grid.cli --algorithm sarsa --steps 50000
 python -m stream_rl_grid.cli --algorithm dyna_q --planning-steps 5 --steps 50000
+python -m stream_rl_grid.cli --algorithm dyna_q_lambda --planning-steps 5 --steps 50000
+```
+
+自由组合非平稳因素，例如只改变转移机制：
+
+```powershell
+python -m stream_rl_grid.cli --wind-changes --goal-moves --obstacle-switches --steps 50000
+```
+
+只改变奖励，或同时打开全部变化：
+
+```powershell
+python -m stream_rl_grid.cli --reward-changes --reward-period 2000 --steps 50000
+python -m stream_rl_grid.cli --wind-changes --goal-moves --obstacle-switches --reward-changes --steps 50000
 ```
 
 切换到“目标迁移、智能体不瞬移”的到达目标逻辑：

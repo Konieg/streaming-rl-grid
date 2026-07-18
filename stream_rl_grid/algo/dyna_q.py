@@ -37,6 +37,17 @@ class DifferentialDynaQ(BaseControlAgent):
         self.semi_gradient_update(active, features, self.alpha * delta)
         return delta
 
+    def _run_planning_updates(self) -> None:
+        keys = tuple(self.model)
+        for _ in range(self.config.planning_steps):
+            model_key = keys[int(self.rng.integers(len(keys)))]
+            model_reward, model_next = self.model[model_key]
+            model_observation, model_action = model_key
+            self._q_learning_delta(
+                model_observation, model_action, model_reward, model_next
+            )
+            self.planning_update_count += 1
+
     def update(self, observation, action, reward, next_observation, next_action) -> float:
         del next_action
         observation = self._observation_key(observation)
@@ -50,15 +61,7 @@ class DifferentialDynaQ(BaseControlAgent):
 
         # The average-reward estimate is updated only from real stream transitions.
         # Planning uses the current estimate but does not count model samples again.
-        keys = tuple(self.model)
-        for _ in range(self.config.planning_steps):
-            model_key = keys[int(self.rng.integers(len(keys)))]
-            model_reward, model_next = self.model[model_key]
-            model_observation, model_action = model_key
-            self._q_learning_delta(
-                model_observation, model_action, model_reward, model_next
-            )
-            self.planning_update_count += 1
+        self._run_planning_updates()
         self.check_finite()
         return real_delta
 

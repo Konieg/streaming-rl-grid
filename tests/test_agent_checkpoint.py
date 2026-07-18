@@ -16,7 +16,10 @@ class AgentAndCheckpointTests(unittest.TestCase):
         config.environment.height = 5
         config.environment.obstacle_count = 2
         config.environment.obstacle_coordinates = None
-        config.environment.profile = "combined"
+        config.environment.wind_changes = True
+        config.environment.goal_moves = True
+        config.environment.obstacle_switches = True
+        config.environment.reward_changes = True
         config.environment.wind_period = 11
         config.environment.target_move_interval = 7
         config.environment.context_switch_interval = 13
@@ -112,7 +115,9 @@ class AgentAndCheckpointTests(unittest.TestCase):
 
     def test_fixed_step_algorithms_use_shared_interface_and_restore_exactly(self):
         with tempfile.TemporaryDirectory() as folder:
-            for algorithm in ("q_learning", "q_lambda", "sarsa", "dyna_q"):
+            for algorithm in (
+                "q_learning", "q_lambda", "sarsa", "dyna_q", "dyna_q_lambda"
+            ):
                 with self.subTest(algorithm=algorithm):
                     config = self.config()
                     config.agent.algorithm = algorithm

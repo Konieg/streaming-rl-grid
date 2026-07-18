@@ -8,7 +8,7 @@ from .config import (
     FEATURE_REPRESENTATIONS,
     AppConfig,
     GOAL_REACHED_BEHAVIORS,
-    PROFILES,
+    WIND_CHOICES,
 )
 from .trainer import Trainer
 
@@ -16,7 +16,17 @@ from .trainer import Trainer
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Streaming differential TD-control algorithms")
     parser.add_argument("--resume", type=str, help="Checkpoint to continue exactly")
-    parser.add_argument("--profile", choices=PROFILES, default="combined")
+    parser.add_argument("--wind-changes", action="store_true")
+    parser.add_argument("--goal-moves", action="store_true")
+    parser.add_argument("--obstacle-switches", action="store_true")
+    parser.add_argument("--reward-changes", action="store_true")
+    parser.add_argument("--wind-period", type=int, default=2_000)
+    parser.add_argument("--reward-period", type=int, default=2_000)
+    parser.add_argument("--target-move-interval", type=int, default=500)
+    parser.add_argument("--context-switch-interval", type=int, default=3_000)
+    parser.add_argument("--num-contexts", type=int, default=3)
+    parser.add_argument("--wind-direction", choices=WIND_CHOICES, default="none")
+    parser.add_argument("--wind-strength", type=float, default=0.3)
     parser.add_argument("--steps", type=int, default=0, help="0 means run until Ctrl+C")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--width", type=int, default=10)
@@ -51,7 +61,17 @@ def main() -> None:
         print("Loaded exact continuation at step %d" % trainer.step_count)
     else:
         config = AppConfig()
-        config.environment.profile = args.profile
+        config.environment.wind_changes = args.wind_changes
+        config.environment.goal_moves = args.goal_moves
+        config.environment.obstacle_switches = args.obstacle_switches
+        config.environment.reward_changes = args.reward_changes
+        config.environment.wind_period = args.wind_period
+        config.environment.reward_period = args.reward_period
+        config.environment.target_move_interval = args.target_move_interval
+        config.environment.context_switch_interval = args.context_switch_interval
+        config.environment.num_contexts = args.num_contexts
+        config.environment.manual_wind_direction = args.wind_direction
+        config.environment.w_strength = args.wind_strength
         config.environment.seed = args.seed
         config.environment.width = args.width
         config.environment.height = args.height

@@ -3,6 +3,7 @@
 from .algo import (
     BaseControlAgent,
     DifferentialDynaQ,
+    DifferentialDynaQLambda,
     DifferentialQLambda,
     DifferentialQLearning,
     DifferentialSarsa,
@@ -13,6 +14,7 @@ from .algo import (
 __all__ = [
     "BaseControlAgent",
     "DifferentialDynaQ",
+    "DifferentialDynaQLambda",
     "DifferentialQLambda",
     "DifferentialQLearning",
     "DifferentialSarsa",

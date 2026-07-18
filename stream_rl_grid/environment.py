@@ -147,15 +147,15 @@ class ContinualWindyGridWorld:
 
     def wind_vector(self, state: Coord) -> Coord:
         """Return the currently selected unit wind direction (without sampling)."""
+        del state
         manual = self.config.manual_wind_direction
-        if self.config.w_strength == 0.0 or manual == "none":
+        if self.config.w_strength == 0.0:
             return (0, 0)
-        if manual == "auto":
-            phase = self.wind_phase if self.config.profile in ("seasonal_wind", "combined") else 0
-            direction = WIND_DIRECTIONS[phase]
-        else:
-            direction = WIND_BY_NAME[manual]
-        return direction
+        if self.config.wind_changes:
+            return WIND_DIRECTIONS[self.wind_phase]
+        if manual == "none":
+            return (0, 0)
+        return WIND_BY_NAME[manual]
 
     def sample_wind(self, state: Coord) -> Coord:
         """Sample one extra wind displacement using w_strength as its probability."""
@@ -178,7 +178,7 @@ class ContinualWindyGridWorld:
         layout = {(int(x), int(y)) for x, y in obstacles}
         start = (int(start[0]), int(start[1]))
         goal = (int(goal[0]), int(goal[1]))
-        if wind_direction not in ("auto", "up", "right", "down", "left", "none"):
+        if wind_direction not in WIND_BY_NAME and wind_direction != "none":
             raise ValueError("Unknown wind direction: %s" % wind_direction)
         if len(layout) > self.width * self.height - 2:
             raise ValueError("Obstacle count leaves fewer than two legal cells.")
@@ -191,18 +191,18 @@ class ContinualWindyGridWorld:
         if not self.free_cells_connected(layout):
             raise ValueError("Obstacle map disconnects the legal cells.")
 
-        map_count = self.config.num_contexts if self.config.profile in ("hidden_context", "combined") else 1
+        map_count = self.config.num_contexts if self.config.obstacle_switches else 1
         self.config.obstacle_count = len(layout)
         self.config.obstacle_coordinates = [list(point) for point in sorted(layout)]
+        self.config.start_position = list(start)
+        self.config.goal_position = list(goal)
+        self.config.manual_wind_direction = wind_direction
         if replace_maps:
-            self.context_maps = [set(layout) for _ in range(map_count)]
+            self.context_maps = self._expand_context_maps([layout], map_count)
             self.context_index = 0
         self.config.context_maps = [
             [list(point) for point in sorted(context)] for context in self.context_maps
         ]
-        self.config.start_position = list(start)
-        self.config.goal_position = list(goal)
-        self.config.manual_wind_direction = wind_direction
         self.start_position = start
         self.goal = goal
         # A live edit must not teleport the agent or change the policy slice selected by
@@ -212,15 +212,17 @@ class ContinualWindyGridWorld:
         self.last_events = ["manual_environment_update"]
 
     def _advance_schedules(self, skip_goal_move: bool = False) -> None:
-        profile = self.config.profile
-        if profile in ("seasonal_wind", "combined") and self.step_count % self.config.wind_period == 0:
+        if self.config.wind_changes and self.step_count % self.config.wind_period == 0:
             self.wind_phase = (self.wind_phase + 1) % len(WIND_DIRECTIONS)
-            self.reward_phase = self.wind_phase
-            self.last_events.append("season:%d" % self.wind_phase)
+            self.last_events.append("wind_phase:%d" % self.wind_phase)
+
+        if self.config.reward_changes and self.step_count % self.config.reward_period == 0:
+            self.reward_phase = (self.reward_phase + 1) % len(WIND_DIRECTIONS)
+            self.last_events.append("reward_phase:%d" % self.reward_phase)
 
         if (
             not skip_goal_move
-            and profile in ("moving_goal", "combined")
+            and self.config.goal_moves
             and self.step_count % self.config.target_move_interval == 0
         ):
             old_goal = self.goal
@@ -228,11 +230,18 @@ class ContinualWindyGridWorld:
             if self.goal != old_goal:
                 self.last_events.append("goal_moved")
 
-        if profile in ("hidden_context", "combined") and self.step_count % self.config.context_switch_interval == 0:
+        if (
+            self.config.obstacle_switches
+            and self.step_count % self.config.context_switch_interval == 0
+        ):
             self.context_index = (self.context_index + 1) % len(self.context_maps)
             raw_obstacles = self.context_maps[self.context_index]
             self.dormant_obstacle = self.agent_state if self.agent_state in raw_obstacles else None
             if self.goal in self.active_obstacles:
+                if not self.config.goal_moves:
+                    raise RuntimeError(
+                        "A fixed goal cannot be covered by a switching obstacle map."
+                    )
                 self._move_goal_to_next_legal_waypoint()
             self.last_events.append("context:%d" % self.context_index)
 
@@ -255,7 +264,7 @@ class ContinualWindyGridWorld:
             "collision": self.config.reward_collision,
             "step": self.config.reward_step,
         }[event]
-        if self.config.profile not in ("seasonal_wind", "combined"):
+        if not self.config.reward_changes:
             return base
         multipliers = {
             "goal": (1.0, 0.75, 1.25, 0.9),
@@ -265,7 +274,7 @@ class ContinualWindyGridWorld:
         return base * multipliers[event][self.reward_phase]
 
     def _prepare_context_maps(self, raw_maps: Optional[List[List[List[int]]]]) -> List[Set[Coord]]:
-        expected_count = self.config.num_contexts if self.config.profile in ("hidden_context", "combined") else 1
+        expected_count = self.config.num_contexts if self.config.obstacle_switches else 1
         if not raw_maps and self.config.obstacle_coordinates:
             coordinates = {(int(p[0]), int(p[1])) for p in self.config.obstacle_coordinates}
             if len(coordinates) == self.config.obstacle_count:
@@ -273,7 +282,7 @@ class ContinualWindyGridWorld:
         if raw_maps:
             maps = [{(int(p[0]), int(p[1])) for p in layout} for layout in raw_maps]
             if len(maps) == 1 and expected_count > 1:
-                maps = [set(maps[0]) for _ in range(expected_count)]
+                maps = self._expand_context_maps(maps, expected_count)
             if len(maps) != expected_count:
                 raise ValueError("Expected %d context map(s), received %d." % (expected_count, len(maps)))
             for layout in maps:
@@ -281,8 +290,25 @@ class ContinualWindyGridWorld:
             return maps
         return [self._generate_connected_obstacles() for _ in range(expected_count)]
 
+    def _expand_context_maps(
+        self, initial_maps: Sequence[Set[Coord]], expected_count: int
+    ) -> List[Set[Coord]]:
+        """Keep authored maps and generate the remaining switching contexts."""
+        maps = [set(layout) for layout in initial_maps]
+        attempts = 0
+        while len(maps) < expected_count:
+            candidate = self._generate_connected_obstacles()
+            attempts += 1
+            if candidate not in maps or attempts >= 100:
+                maps.append(candidate)
+                attempts = 0
+        return maps
+
     def _generate_connected_obstacles(self) -> Set[Coord]:
         cells = [(x, y) for y in range(self.height) for x in range(self.width)]
+        if not self.config.goal_moves and self.config.goal_position is not None:
+            fixed_goal = tuple(int(value) for value in self.config.goal_position)
+            cells.remove(fixed_goal)
         for _ in range(10_000):
             if self.config.obstacle_count == 0:
                 return set()
@@ -297,6 +323,12 @@ class ContinualWindyGridWorld:
             raise ValueError("Each context map must contain exactly obstacle_count cells.")
         if any(not self._in_bounds(p) for p in obstacles):
             raise ValueError("Obstacle lies outside the grid.")
+        if not self.config.goal_moves and self.config.goal_position is not None:
+            fixed_goal = tuple(int(value) for value in self.config.goal_position)
+            if fixed_goal in obstacles:
+                raise ValueError(
+                    "A switching obstacle map cannot cover the fixed goal."
+                )
         if not self.free_cells_connected(obstacles):
             raise ValueError("Obstacle map disconnects the legal cells.")
 
@@ -330,7 +362,11 @@ class ContinualWindyGridWorld:
         return path
 
     def _first_legal_goal(self) -> Coord:
-        obstacles = self.context_maps[0]
+        obstacles = (
+            set().union(*self.context_maps)
+            if self.config.obstacle_switches and not self.config.goal_moves
+            else self.context_maps[0]
+        )
         for i in range(len(self.goal_path) - 1, -1, -1):
             if self.goal_path[i] not in obstacles:
                 self.goal_path_index = i
@@ -340,7 +376,12 @@ class ContinualWindyGridWorld:
     def _initial_goal(self) -> Coord:
         if self.config.goal_position is not None:
             goal = tuple(int(v) for v in self.config.goal_position)
-            if goal in self.active_obstacles:
+            relevant_maps = (
+                self.context_maps
+                if self.config.obstacle_switches and not self.config.goal_moves
+                else [self.active_obstacles]
+            )
+            if any(goal in obstacles for obstacles in relevant_maps):
                 raise ValueError("Goal coordinate cannot be an obstacle.")
             if goal in self.goal_path:
                 self.goal_path_index = self.goal_path.index(goal)
@@ -361,17 +402,29 @@ class ContinualWindyGridWorld:
 
     def _relocate_goal_randomly(self) -> None:
         """Move the target while leaving the agent on the previously rewarded target cell."""
-        self.goal = self._random_legal_state(exclude={self.agent_state})
+        self.goal = self._random_legal_state(
+            exclude={self.agent_state},
+            legal_in_all_contexts=(
+                self.config.obstacle_switches and not self.config.goal_moves
+            ),
+        )
         if self.goal in self.goal_path:
             self.goal_path_index = self.goal_path.index(self.goal)
 
-    def _random_legal_state(self, exclude: Optional[Set[Coord]] = None) -> Coord:
+    def _random_legal_state(
+        self, exclude: Optional[Set[Coord]] = None,
+        legal_in_all_contexts: bool = False,
+    ) -> Coord:
         excluded = set() if exclude is None else set(exclude)
+        obstacles = (
+            set().union(*self.context_maps)
+            if legal_in_all_contexts else self.active_obstacles
+        )
         legal = [
             (x, y)
             for y in range(self.height)
             for x in range(self.width)
-            if (x, y) not in self.active_obstacles and (x, y) not in excluded
+            if (x, y) not in obstacles and (x, y) not in excluded
         ]
         if not legal:
             raise RuntimeError("No legal state is available for relocation.")

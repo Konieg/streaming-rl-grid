@@ -13,6 +13,17 @@ class FakeVariable:
     def get(self):
         return self.value
 
+    def set(self, value):
+        self.value = value
+
+
+class FakeCombo:
+    def __init__(self):
+        self.state = None
+
+    def configure(self, **changes):
+        self.state = changes.get("state", self.state)
+
 
 class GuiSnapshotDeliveryTests(unittest.TestCase):
     def test_only_latest_unrendered_snapshot_is_retained(self):
@@ -40,6 +51,7 @@ class GuiSnapshotDeliveryTests(unittest.TestCase):
             "q_lambda": {"lambda_"},
             "sarsa": {"lambda_"},
             "dyna_q": {"planning_steps"},
+            "dyna_q_lambda": {"lambda_", "planning_steps"},
             "tidbd": {"lambda_", "theta", "beta_min", "beta_max"},
         }
         for algorithm, extras in expected_extras.items():
@@ -65,6 +77,24 @@ class GuiSnapshotDeliveryTests(unittest.TestCase):
         self.assertEqual(
             panel._selected_goal_reached_behavior(), "relocate_target"
         )
+
+    def test_goal_moves_forces_and_disables_random_restart_choice(self):
+        panel = TrainingPanel.__new__(TrainingPanel)
+        panel.variables = {
+            "goal_moves": FakeVariable(True),
+            "goal_reached_behavior": FakeVariable(
+                GOAL_REACHED_BEHAVIOR_LABELS["relocate_target"]
+            ),
+        }
+        panel.goal_behavior_combo = FakeCombo()
+
+        panel._refresh_goal_behavior_availability()
+
+        self.assertEqual(
+            panel.variables["goal_reached_behavior"].get(),
+            GOAL_REACHED_BEHAVIOR_LABELS["random_agent_restart"],
+        )
+        self.assertEqual(panel.goal_behavior_combo.state, "disabled")
 
 
 if __name__ == "__main__":

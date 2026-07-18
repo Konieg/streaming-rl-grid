@@ -4,6 +4,7 @@ import numpy as np
 
 from stream_rl_grid.algo import (
     DifferentialDynaQ,
+    DifferentialDynaQLambda,
     DifferentialQLambda,
     DifferentialQLearning,
     DifferentialSarsa,
@@ -112,6 +113,32 @@ class DifferentialAlgorithmTests(unittest.TestCase):
         self.assertEqual(agent.update_count, 1)
         self.assertEqual(agent.planning_update_count, 3)
         self.assertEqual(len(agent.model), 1)
+
+    def test_dyna_q_lambda_traces_only_the_real_stream(self):
+        agent, current = self.initialized_agent(
+            DifferentialDynaQLambda, "dyna_q_lambda"
+        )
+        agent.config.planning_steps = 1
+        agent.trace[7] = 0.5
+
+        delta = agent.update(self.state, 0, 3.0, self.next_state, 1)
+
+        self.assertEqual(delta, 6.0)
+        self.assertAlmostEqual(agent.weights[7], 2.4)
+        self.assertNotEqual(agent.trace[current], 0.0)
+        self.assertEqual(agent.reward_rate, 0.06)
+        self.assertEqual(agent.update_count, 1)
+        self.assertEqual(agent.planning_update_count, 1)
+        self.assertEqual(len(agent.model), 1)
+
+    def test_dyna_q_lambda_cuts_trace_after_exploratory_action(self):
+        agent, _ = self.initialized_agent(
+            DifferentialDynaQLambda, "dyna_q_lambda"
+        )
+        delta = agent.update(self.state, 0, 3.0, self.next_state, 0)
+        self.assertEqual(delta, 6.0)
+        np.testing.assert_array_equal(agent.trace, np.zeros(agent.coder.size))
+        self.assertEqual(agent.trace_cut_count, 1)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,6 @@ from .config import (
     AgentConfig,
     AppConfig,
     EnvironmentConfig,
-    PROFILES,
     TrainingConfig,
     WIND_CHOICES,
 )
@@ -100,33 +99,45 @@ class TrainingPanel:
         notebook.add(agent_tab, text="Agent")
         notebook.add(run_tab, text="Training")
 
-        self._add_combo(env_tab, "Profile", "profile", PROFILES, 0)
+        switches = ttk.LabelFrame(env_tab, text="Non-stationarity")
+        switches.grid(row=0, column=0, columnspan=2, sticky="ew", padx=6, pady=4)
+        self._add_check(switches, "Wind direction", "wind_changes", 0, 0)
+        goal_moves_check = self._add_check(
+            switches, "Target", "goal_moves", 0, 1
+        )
+        goal_moves_check.configure(command=self._refresh_goal_behavior_availability)
+        self._add_check(switches, "Obstacle map", "obstacle_switches", 1, 0)
+        self._add_check(switches, "Reward", "reward_changes", 1, 1)
         self._add_entry(env_tab, "Grid width", "width", 1)
         self._add_entry(env_tab, "Grid height", "height", 2)
         self._add_entry(env_tab, "Obstacle count", "obstacle_count", 3)
         self._add_entry(env_tab, "Obstacles (x,y; ...)", "obstacle_coordinates", 4)
         self._add_entry(env_tab, "Start (x,y)", "start_position", 5)
         self._add_entry(env_tab, "Goal (x,y)", "goal_position", 6)
-        self._add_combo(env_tab, "Wind direction", "manual_wind_direction", WIND_CHOICES, 7)
+        self._add_combo(
+            env_tab, "Fixed wind (when changes off)",
+            "manual_wind_direction", WIND_CHOICES, 7,
+        )
         self._add_entry(env_tab, "Wind strength (0-1)", "w_strength", 8)
         self._add_entry(env_tab, "Context maps", "num_contexts", 9)
         self._add_entry(env_tab, "Seed", "seed", 10)
         self._add_entry(env_tab, "Goal reward", "reward_goal", 11)
         self._add_entry(env_tab, "Collision reward", "reward_collision", 12)
         self._add_entry(env_tab, "Step reward", "reward_step", 13)
-        self._add_entry(env_tab, "Wind/reward period", "wind_period", 14)
-        self._add_entry(env_tab, "Goal move interval", "target_move_interval", 15)
-        self._add_entry(env_tab, "Context switch interval", "context_switch_interval", 16)
-        goal_behavior_combo = self._add_combo(
+        self._add_entry(env_tab, "Wind change period", "wind_period", 14)
+        self._add_entry(env_tab, "Reward change period", "reward_period", 15)
+        self._add_entry(env_tab, "Goal move interval", "target_move_interval", 16)
+        self._add_entry(env_tab, "Context switch interval", "context_switch_interval", 17)
+        self.goal_behavior_combo = self._add_combo(
             env_tab,
             "After reaching target",
             "goal_reached_behavior",
             tuple(GOAL_REACHED_BEHAVIOR_LABELS[name] for name in GOAL_REACHED_BEHAVIORS),
-            17,
+            18,
         )
-        goal_behavior_combo.configure(width=28)
+        self.goal_behavior_combo.configure(width=28)
         preview_row = ttk.Frame(env_tab)
-        preview_row.grid(row=18, column=0, columnspan=2, sticky="ew", padx=6, pady=8)
+        preview_row.grid(row=19, column=0, columnspan=2, sticky="ew", padx=6, pady=8)
         ttk.Button(preview_row, text="Generate maps", command=self.generate_preview).pack(side=tk.LEFT, expand=True, fill=tk.X)
         ttk.Button(preview_row, text="Prev map", command=lambda: self._change_preview_context(-1)).pack(side=tk.LEFT, padx=3)
         ttk.Button(preview_row, text="Next map", command=lambda: self._change_preview_context(1)).pack(side=tk.LEFT)
@@ -235,6 +246,15 @@ class TrainingPanel:
         self.parameter_widgets[key] = (label_widget, entry)
         parent.columnconfigure(1, weight=1)
 
+    def _add_check(
+        self, parent: ttk.Frame, label: str, key: str, row: int, column: int
+    ):
+        variable = tk.BooleanVar(value=False)
+        self.variables[key] = variable
+        check = ttk.Checkbutton(parent, text=label, variable=variable)
+        check.grid(row=row, column=column, sticky="w", padx=6, pady=3)
+        return check
+
     def _add_combo(self, parent: ttk.Frame, label: str, key: str, values, row: int):
         label_widget = ttk.Label(parent, text=label)
         label_widget.grid(row=row, column=0, sticky="w", padx=6, pady=4)
@@ -273,6 +293,15 @@ class TrainingPanel:
             if selected == label:
                 return name
         raise ValueError("Unknown goal-reached behavior: %s" % selected)
+
+    def _refresh_goal_behavior_availability(self) -> None:
+        if bool(self.variables["goal_moves"].get()):
+            self.variables["goal_reached_behavior"].set(
+                GOAL_REACHED_BEHAVIOR_LABELS["random_agent_restart"]
+            )
+            self.goal_behavior_combo.configure(state=tk.DISABLED)
+        else:
+            self.goal_behavior_combo.configure(state="readonly")
 
     def _selected_feature_representation(self) -> str:
         selected = self.variables["feature_representation"].get()
@@ -316,6 +345,7 @@ class TrainingPanel:
                     value = GOAL_REACHED_BEHAVIOR_LABELS.get(value, value)
                 variable.set("" if value is None else value)
         self._refresh_agent_fields()
+        self._refresh_goal_behavior_availability()
         maps = config.environment.context_maps or (
             [config.environment.obstacle_coordinates] if config.environment.obstacle_coordinates else []
         )
@@ -360,18 +390,23 @@ class TrainingPanel:
         obstacle_count = int(self.variables["obstacle_count"].get())
         if obstacles and len(obstacles) != obstacle_count:
             raise ValueError("Obstacle count is %d, but %d coordinates were entered." % (obstacle_count, len(obstacles)))
-        profile = self.variables["profile"].get()
         num_contexts = int(self.variables["num_contexts"].get())
-        expected_maps = num_contexts if profile in ("hidden_context", "combined") else 1
+        obstacle_switches = bool(self.variables["obstacle_switches"].get())
+        expected_maps = num_contexts if obstacle_switches else 1
         env = EnvironmentConfig(
             width=int(self.variables["width"].get()), height=int(self.variables["height"].get()),
             obstacle_count=obstacle_count,
-            num_contexts=num_contexts, profile=profile,
+            num_contexts=num_contexts,
+            wind_changes=bool(self.variables["wind_changes"].get()),
+            goal_moves=bool(self.variables["goal_moves"].get()),
+            obstacle_switches=obstacle_switches,
+            reward_changes=bool(self.variables["reward_changes"].get()),
             seed=int(self.variables["seed"].get()), reward_goal=float(self.variables["reward_goal"].get()),
             reward_collision=float(self.variables["reward_collision"].get()),
             reward_step=float(self.variables["reward_step"].get()),
             w_strength=float(self.variables["w_strength"].get()),
             wind_period=int(self.variables["wind_period"].get()),
+            reward_period=int(self.variables["reward_period"].get()),
             target_move_interval=int(self.variables["target_move_interval"].get()),
             context_switch_interval=int(self.variables["context_switch_interval"].get()),
             start_position=list(self._parse_coordinate(self.variables["start_position"].get(), "Start"))
@@ -389,8 +424,10 @@ class TrainingPanel:
         )
         if preview_matches:
             env.context_maps = [[list(point) for point in sorted(layout)] for layout in self.preview_maps]
-        elif obstacles:
-            env.context_maps = [[list(point) for point in obstacles] for _ in range(expected_maps)]
+        elif obstacles and expected_maps == 1:
+            env.context_maps = [[list(point) for point in obstacles]]
+        else:
+            env.context_maps = None
         agent = AgentConfig(
             algorithm=self._selected_algorithm_key(),
             feature_representation=self._selected_feature_representation(),
@@ -510,10 +547,8 @@ class TrainingPanel:
             if start is None or goal is None:
                 raise ValueError("Start and goal coordinates are required.")
             if self.trainer is None or not self.worker or not self.worker.is_alive():
-                self.preview_maps = [set(obstacles) for _ in range(
-                    config.environment.num_contexts if config.environment.profile in ("hidden_context", "combined") else 1
-                )]
                 environment = ContinualWindyGridWorld(config.environment)
+                self.preview_maps = [set(layout) for layout in environment.context_maps]
                 snapshot = {
                     "agent_state": environment.agent_state, "start_position": environment.start_position,
                     "goal": environment.goal, "obstacles": sorted(environment.active_obstacles),
@@ -530,7 +565,7 @@ class TrainingPanel:
             ):
                 raise ValueError("Grid width/height cannot change during training; Stop and start a new run.")
             if not self.pause_event.is_set():
-                raise ValueError("Pause training before applying map, start, goal, or profile changes.")
+                raise ValueError("Pause training before applying environment or schedule changes.")
             snapshot = self.trainer.apply_environment_configuration(
                 obstacles, start, goal, config.environment.manual_wind_direction, config.environment
             )
@@ -722,7 +757,9 @@ class TrainingPanel:
             "Start %s | Agent %s | Goal %s | Obstacles %s | Wind %s (p=%.3g)" % (
                 tuple(snapshot.get("start_position", (-1, -1))), tuple(snapshot.get("agent_state", (-1, -1))),
                 tuple(snapshot.get("goal", (-1, -1))), snapshot.get("obstacles", []),
-                snapshot.get("manual_wind_direction", "auto"), snapshot.get("w_strength", 0.0),
+                "cyclic" if snapshot.get("wind_changes", False)
+                else snapshot.get("manual_wind_direction", "none"),
+                snapshot.get("w_strength", 0.0),
             )
         )
         for key, label in self.metric_labels.items():

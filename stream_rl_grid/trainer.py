@@ -120,6 +120,10 @@ class Trainer:
                 "events": list(self.environment.last_events),
                 "manual_wind_direction": self.environment.config.manual_wind_direction,
                 "w_strength": self.environment.config.w_strength,
+                "wind_changes": self.environment.config.wind_changes,
+                "goal_moves": self.environment.config.goal_moves,
+                "obstacle_switches": self.environment.config.obstacle_switches,
+                "reward_changes": self.environment.config.reward_changes,
                 "algorithm": self.agent.algorithm_name,
                 "policy_probabilities": policies,
                 "curves": self.metrics.curves(),
@@ -140,13 +144,15 @@ class Trainer:
             current_layout = set(self.environment.context_maps[self.environment.context_index])
             desired_config = environment_config or self.environment.config
             desired_map_count = (
-                desired_config.num_contexts if desired_config.profile in ("hidden_context", "combined") else 1
+                desired_config.num_contexts if desired_config.obstacle_switches else 1
             )
             replace_maps = set(obstacles) != current_layout or desired_map_count != len(self.environment.context_maps)
             if environment_config is not None:
                 for name in (
-                    "profile", "num_contexts", "reward_goal", "reward_collision", "reward_step",
-                    "w_strength", "wind_period", "target_move_interval", "context_switch_interval",
+                    "num_contexts", "wind_changes", "goal_moves", "obstacle_switches",
+                    "reward_changes", "reward_goal", "reward_collision", "reward_step",
+                    "w_strength", "wind_period", "reward_period", "target_move_interval",
+                    "context_switch_interval",
                     "goal_reached_behavior",
                 ):
                     setattr(self.environment.config, name, getattr(environment_config, name))
@@ -158,7 +164,7 @@ class Trainer:
 
     def apply_wind(self, direction: str, strength: float) -> Dict[str, Any]:
         """Change wind atomically without moving the agent or altering the map."""
-        if direction not in ("auto", "up", "right", "down", "left", "none"):
+        if direction not in ("up", "right", "down", "left", "none"):
             raise ValueError("Unknown wind direction: %s" % direction)
         if not 0.0 <= float(strength) <= 1.0:
             raise ValueError("Wind strength must lie in [0, 1].")
