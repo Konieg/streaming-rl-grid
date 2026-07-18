@@ -15,6 +15,7 @@ from matplotlib.figure import Figure
 from .algo import ALGORITHM_CONFIG_FIELDS, ALGORITHM_LABELS
 from .config import (
     ALGORITHMS,
+    FEATURE_REPRESENTATIONS,
     GOAL_REACHED_BEHAVIORS,
     GOAL_REACHED_BEHAVIOR_LABELS,
     AgentConfig,
@@ -25,6 +26,7 @@ from .config import (
     WIND_CHOICES,
 )
 from .environment import ContinualWindyGridWorld
+from .features import FEATURE_REPRESENTATION_LABELS
 from .trainer import Trainer
 
 
@@ -33,11 +35,16 @@ Coord = Tuple[int, int]
 
 class TrainingPanel:
     COMMON_AGENT_FIELDS = (
-        "num_tilings", "tiles_per_dimension", "iht_size", "epsilon",
+        "feature_representation", "epsilon",
         "effective_initial_step", "reward_rate_step",
     )
+    REPRESENTATION_CONFIG_FIELDS = {
+        "tile_coding": ("num_tilings", "tiles_per_dimension", "iht_size"),
+        "handcrafted_lfa": (),
+    }
     AGENT_FIELD_ORDER = (
-        "num_tilings", "tiles_per_dimension", "iht_size", "lambda_", "epsilon",
+        "feature_representation", "num_tilings", "tiles_per_dimension", "iht_size",
+        "lambda_", "epsilon",
         "theta", "effective_initial_step", "reward_rate_step", "beta_min", "beta_max",
         "planning_steps",
     )
@@ -130,6 +137,18 @@ class TrainingPanel:
         )
         algorithm_combo.configure(width=30)
         algorithm_combo.bind("<<ComboboxSelected>>", self._refresh_agent_fields)
+        representation_values = tuple(
+            FEATURE_REPRESENTATION_LABELS[name] for name in FEATURE_REPRESENTATIONS
+        )
+        representation_combo = self._add_combo(
+            agent_tab,
+            "Feature representation",
+            "feature_representation",
+            representation_values,
+            1,
+        )
+        representation_combo.configure(width=30)
+        representation_combo.bind("<<ComboboxSelected>>", self._refresh_agent_fields)
         self._add_entry(agent_tab, "Number of tilings / group", "num_tilings", 1)
         self._add_entry(agent_tab, "Tiles per dimension", "tiles_per_dimension", 2)
         self._add_entry(agent_tab, "IHT size", "iht_size", 3)
@@ -189,6 +208,7 @@ class TrainingPanel:
             ("collision_rate", "Collision rate"), ("abs_td_error", "Mean |TD error|"),
             ("alpha_mean", "Mean step size"), ("alpha_max", "Max step size"),
             ("model_size", "Dyna model size"), ("planning_update_count", "Planning updates"),
+            ("feature_representation", "Features"), ("feature_dimension", "Feature dimension"),
             ("iht_used", "IHT used"), ("iht_collisions", "IHT collisions"),
             ("context_index", "Hidden context (log)"), ("wind_phase", "Wind phase (log)"),
             ("algorithm", "Algorithm"), ("next_action", "Next action"),
@@ -228,9 +248,12 @@ class TrainingPanel:
         return combo
 
     @classmethod
-    def agent_fields_for_algorithm(cls, algorithm: str) -> Tuple[str, ...]:
+    def agent_fields_for_algorithm(
+        cls, algorithm: str, feature_representation: str = "tile_coding"
+    ) -> Tuple[str, ...]:
         visible = set(cls.COMMON_AGENT_FIELDS)
         visible.update(ALGORITHM_CONFIG_FIELDS.get(algorithm, ()))
+        visible.update(cls.REPRESENTATION_CONFIG_FIELDS.get(feature_representation, ()))
         return tuple(key for key in cls.AGENT_FIELD_ORDER if key in visible)
 
     def _selected_algorithm_key(self) -> str:
@@ -251,11 +274,21 @@ class TrainingPanel:
                 return name
         raise ValueError("Unknown goal-reached behavior: %s" % selected)
 
+    def _selected_feature_representation(self) -> str:
+        selected = self.variables["feature_representation"].get()
+        if selected in FEATURE_REPRESENTATIONS:
+            return selected
+        for name, label in FEATURE_REPRESENTATION_LABELS.items():
+            if selected == label:
+                return name
+        raise ValueError("Unknown feature representation: %s" % selected)
+
     def _refresh_agent_fields(self, event=None) -> None:
         del event
         try:
             visible_fields = self.agent_fields_for_algorithm(
-                self._selected_algorithm_key()
+                self._selected_algorithm_key(),
+                self._selected_feature_representation(),
             )
         except ValueError:
             return
@@ -277,6 +310,8 @@ class TrainingPanel:
                 value = values[key]
                 if key == "algorithm":
                     value = ALGORITHM_LABELS.get(value, value)
+                elif key == "feature_representation":
+                    value = FEATURE_REPRESENTATION_LABELS.get(value, value)
                 elif key == "goal_reached_behavior":
                     value = GOAL_REACHED_BEHAVIOR_LABELS.get(value, value)
                 variable.set("" if value is None else value)
@@ -358,6 +393,7 @@ class TrainingPanel:
             env.context_maps = [[list(point) for point in obstacles] for _ in range(expected_maps)]
         agent = AgentConfig(
             algorithm=self._selected_algorithm_key(),
+            feature_representation=self._selected_feature_representation(),
             num_tilings=int(self.variables["num_tilings"].get()),
             tiles_per_dimension=int(self.variables["tiles_per_dimension"].get()),
             iht_size=int(self.variables["iht_size"].get()), lambda_=float(self.variables["lambda_"].get()),

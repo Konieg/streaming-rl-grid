@@ -14,7 +14,7 @@ from .checkpoint import load_checkpoint, save_checkpoint
 from .config import AppConfig
 from .environment import ACTION_NAMES, ContinualWindyGridWorld
 from .metrics import MetricsTracker
-from .tile_coder import DualTileCoder
+from .features import create_feature_representation
 
 
 class Trainer:
@@ -25,7 +25,7 @@ class Trainer:
         self.base_dir = Path(base_dir or Path.cwd()).resolve()
         self.run_id = run_id or datetime.now().strftime("%Y%m%d-%H%M%S")
         self.environment = ContinualWindyGridWorld(config.environment)
-        self.coder = DualTileCoder(config.environment, config.agent)
+        self.coder = create_feature_representation(config.environment, config.agent)
         self.agent = create_agent(
             self.coder,
             config.agent,
@@ -123,9 +123,11 @@ class Trainer:
                 "algorithm": self.agent.algorithm_name,
                 "policy_probabilities": policies,
                 "curves": self.metrics.curves(),
-                "iht_used": len(self.coder.iht.dictionary),
-                "iht_size": self.coder.iht.size,
-                "iht_collisions": self.coder.iht.overfull_count,
+                "feature_representation": self.config.agent.feature_representation,
+                "feature_dimension": self.coder.size,
+                "iht_used": len(self.coder.iht.dictionary) if hasattr(self.coder, "iht") else 0,
+                "iht_size": self.coder.iht.size if hasattr(self.coder, "iht") else 0,
+                "iht_collisions": self.coder.iht.overfull_count if hasattr(self.coder, "iht") else 0,
                 }
             )
             return summary
@@ -199,6 +201,7 @@ class Trainer:
         trainer = cls(config, base_dir=base_dir, run_id=state["run_id"])
         saved_compatibility = dict(state.get("compatibility", {}))
         saved_compatibility.setdefault("algorithm", config.agent.algorithm)
+        saved_compatibility.setdefault("feature_representation", "tile_coding")
         if saved_compatibility["algorithm"] == "sarsa_lambda":
             saved_compatibility["algorithm"] = "sarsa"
         if saved_compatibility != trainer._compatibility_signature():
@@ -216,16 +219,28 @@ class Trainer:
         return trainer
 
     def _compatibility_signature(self) -> Dict[str, Any]:
-        return {
+        signature = {
             "width": self.config.environment.width,
             "height": self.config.environment.height,
             "actions": list(ACTION_NAMES),
-            "num_tilings": self.config.agent.num_tilings,
-            "tiles_per_dimension": self.config.agent.tiles_per_dimension,
-            "iht_size": self.config.agent.iht_size,
             "algorithm": self.config.agent.algorithm,
-            "feature_groups": ["absolute_position", "relative_goal", "categorical_bias"],
+            "feature_representation": self.config.agent.feature_representation,
         }
+        if self.config.agent.feature_representation == "tile_coding":
+            signature.update({
+                "num_tilings": self.config.agent.num_tilings,
+                "tiles_per_dimension": self.config.agent.tiles_per_dimension,
+                "iht_size": self.config.agent.iht_size,
+                "feature_groups": [
+                    "absolute_position", "relative_goal", "categorical_bias"
+                ],
+            })
+        else:
+            signature.update({
+                "dimension": self.coder.size,
+                "feature_groups": ["absolute_position", "relative_goal"],
+            })
+        return signature
 
     def _append_log_row(self, delta: float, alpha: Dict[str, float]) -> None:
         self._log_path.parent.mkdir(parents=True, exist_ok=True)

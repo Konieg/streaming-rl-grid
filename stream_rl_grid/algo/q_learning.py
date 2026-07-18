@@ -18,12 +18,13 @@ class DifferentialQLearning(BaseControlAgent):
 
     def update(self, observation, action, reward, next_observation, next_action) -> float:
         del next_action  # Behavior is epsilon-greedy; the off-policy target is greedy.
-        active = self.coder.active(observation, action)
+        active, features = self.feature_values(observation, action)
         next_value = float(self.action_values(next_observation, readonly=False).max())
         delta = float(
-            reward - self.reward_rate + next_value - self.weights[active].sum()
+            reward - self.reward_rate + next_value
+            - self.value_from_features(active, features)
         )
-        self.weights[active] += self.alpha * delta
+        self.semi_gradient_update(active, features, self.alpha * delta)
         return self.record_real_update(delta)
 
     def step_size_summary(self) -> Dict[str, float]:

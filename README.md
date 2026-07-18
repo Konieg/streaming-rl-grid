@@ -198,4 +198,28 @@ Default maps can be authored directly in `EnvironmentConfig` with
 `w_strength=0.3` means a 30% chance of one additional cell of displacement in the selected
 wind direction on each transition.
 
+## Selectable feature representations
+
+`AgentConfig.feature_representation` selects either `"tile_coding"` (the default)
+or `"handcrafted_lfa"`. The GUI exposes the same choice and hides tile-only
+parameters when the D=55 representation is selected. Headless runs can select it with:
+
+```powershell
+python -m stream_rl_grid.cli --features handcrafted_lfa --algorithm sarsa --steps 50000
+```
+
+The hand-crafted representation is the collaborator branch's exact unit-norm linear
+encoding. For each candidate action it uses an independent eleven-weight block:
+
+```text
+[1, x, y, x^2, y^2, xy, dx, dy, dx^2, dy^2, dxdy]
+```
+
+Here `x` and `y` are scaled to `[-1, 1]`, while `dx` and `dy` are the agent-to-goal
+offsets divided by the corresponding grid span. The eleven values are L2-normalized,
+then placed in the selected action's block, giving `11 * 5 = 55` weights. The
+`previous_action` observation component is intentionally ignored. Because this feature
+vector has unit norm, `effective_initial_step` is used directly; tile coding continues
+to divide it by its nominal active-feature count.
+
 测试覆盖各算法的 bootstrap target、Watkins trace cutting、Dyna planning、continuing 目标传送、碰撞回退、`stay` 的风效应、地图切换延迟障碍物、TIDBD 数值有限性，以及 checkpoint 后的精确续训。

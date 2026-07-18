@@ -9,11 +9,14 @@ from typing import Dict, List
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .config import AppConfig, PROFILES
+from .config import AppConfig, FEATURE_REPRESENTATIONS, PROFILES
 from .trainer import Trainer
 
 
-def run_benchmark(profiles: List[str], seeds: List[int], steps: int, output: Path) -> Path:
+def run_benchmark(
+    profiles: List[str], seeds: List[int], steps: int, output: Path,
+    feature_representation: str = "tile_coding",
+) -> Path:
     output.mkdir(parents=True, exist_ok=True)
     rows: List[Dict[str, float]] = []
     curves = {}
@@ -26,6 +29,7 @@ def run_benchmark(profiles: List[str], seeds: List[int], steps: int, output: Pat
                 config.environment.profile = profile
                 config.environment.seed = seed
                 config.agent.algorithm = algorithm
+                config.agent.feature_representation = feature_representation
                 config.training.auto_checkpoint_steps = steps + 1
                 trainer = Trainer(config, base_dir=output)
                 snapshot = trainer.run_steps(steps)
@@ -79,11 +83,16 @@ def main() -> None:
     parser.add_argument("--profiles", nargs="+", choices=PROFILES, default=list(PROFILES))
     parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
     parser.add_argument("--steps", type=int, default=50_000)
+    parser.add_argument(
+        "--features", choices=FEATURE_REPRESENTATIONS, default="tile_coding"
+    )
     parser.add_argument("--output", type=str)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     output = Path(args.output) if args.output else root / "benchmark_results" / datetime.now().strftime("%Y%m%d-%H%M%S")
-    csv_path = run_benchmark(args.profiles, args.seeds, args.steps, output.resolve())
+    csv_path = run_benchmark(
+        args.profiles, args.seeds, args.steps, output.resolve(), args.features
+    )
     print("Benchmark written to %s" % csv_path.parent)
 
 

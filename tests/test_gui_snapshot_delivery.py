@@ -32,6 +32,9 @@ class GuiSnapshotDeliveryTests(unittest.TestCase):
 
     def test_agent_fields_are_specific_to_selected_algorithm(self):
         common = set(TrainingPanel.COMMON_AGENT_FIELDS)
+        tile_fields = set(
+            TrainingPanel.REPRESENTATION_CONFIG_FIELDS["tile_coding"]
+        )
         expected_extras = {
             "q_learning": set(),
             "q_lambda": {"lambda_"},
@@ -43,6 +46,12 @@ class GuiSnapshotDeliveryTests(unittest.TestCase):
             with self.subTest(algorithm=algorithm):
                 self.assertEqual(
                     set(TrainingPanel.agent_fields_for_algorithm(algorithm)),
+                    common | tile_fields | extras,
+                )
+                self.assertEqual(
+                    set(TrainingPanel.agent_fields_for_algorithm(
+                        algorithm, "handcrafted_lfa"
+                    )),
                     common | extras,
                 )
 

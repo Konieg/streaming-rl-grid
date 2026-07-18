@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from .algo import ALGORITHMS
 
+FEATURE_REPRESENTATIONS = ("tile_coding", "handcrafted_lfa")
+
 PROFILES = ("stationary", "seasonal_wind", "moving_goal", "hidden_context", "combined", "customize")
 WIND_CHOICES = ("auto", "up", "right", "down", "left", "none")
 GOAL_REACHED_BEHAVIORS = ("random_agent_restart", "relocate_target")
@@ -79,6 +81,7 @@ class EnvironmentConfig:
 @dataclass
 class AgentConfig:
     algorithm: str = "sarsa"
+    feature_representation: str = "tile_coding"
     num_tilings: int = 8
     tiles_per_dimension: int = 8
     iht_size: int = 65_536
@@ -94,12 +97,17 @@ class AgentConfig:
     def validate(self) -> None:
         if self.algorithm not in ALGORITHMS:
             raise ValueError("Unknown training algorithm: %s" % self.algorithm)
-        if self.num_tilings < 1:
-            raise ValueError("num_tilings must be positive.")
-        if self.tiles_per_dimension < 2:
-            raise ValueError("tiles_per_dimension must be at least 2.")
-        if self.iht_size < 128:
-            raise ValueError("iht_size must be at least 128.")
+        if self.feature_representation not in FEATURE_REPRESENTATIONS:
+            raise ValueError(
+                "Unknown feature representation: %s" % self.feature_representation
+            )
+        if self.feature_representation == "tile_coding":
+            if self.num_tilings < 1:
+                raise ValueError("num_tilings must be positive.")
+            if self.tiles_per_dimension < 2:
+                raise ValueError("tiles_per_dimension must be at least 2.")
+            if self.iht_size < 128:
+                raise ValueError("iht_size must be at least 128.")
         if not 0.0 <= self.lambda_ <= 1.0:
             raise ValueError("lambda must lie in [0, 1].")
         if not 0.0 <= self.epsilon <= 1.0:
@@ -160,6 +168,7 @@ class AppConfig:
             agent_data["algorithm"] = "tidbd" if legacy_use_tidbd is not False else "sarsa"
         if agent_data["algorithm"] == "sarsa_lambda":
             agent_data["algorithm"] = "sarsa"
+        agent_data.setdefault("feature_representation", "tile_coding")
         result = cls(
             environment=EnvironmentConfig(**environment_data),
             agent=AgentConfig(**agent_data),

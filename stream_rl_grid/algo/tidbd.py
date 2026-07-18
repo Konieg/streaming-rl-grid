@@ -18,23 +18,27 @@ class DifferentialSarsaTIDBD(BaseControlAgent):
     def __init__(self, coder, config, seed: int = 0, num_actions: int = 5):
         config.validate()
         super().__init__(coder, config, seed, num_actions=num_actions)
-        initial_alpha = config.effective_initial_step / coder.nominal_active_count
+        initial_alpha = self.fixed_step_size()
         self.beta = np.full(coder.size, np.log(initial_alpha), dtype=np.float64)
         self.h = np.zeros(coder.size, dtype=np.float64)
         self.trace = np.zeros(coder.size, dtype=np.float64)
         self.beta_clip_count = 0
 
     def update(self, observation, action, reward, next_observation, next_action) -> float:
-        active = self.coder.active(observation, action)
-        next_active = self.coder.active(next_observation, next_action)
+        active, features = self.feature_values(observation, action)
+        next_active, next_features = self.feature_values(next_observation, next_action)
         delta = float(
             reward - self.reward_rate
-            + self.weights[next_active].sum() - self.weights[active].sum()
+            + self.value_from_features(next_active, next_features)
+            - self.value_from_features(active, features)
         )
         self.trace *= self.config.lambda_
-        self.trace[active] = 1.0
+        self.trace[active] = features
 
-        proposed_beta = self.beta[active] + self.config.theta * delta * self.h[active]
+        proposed_beta = (
+            self.beta[active]
+            + self.config.theta * delta * features * self.h[active]
+        )
         clipped_beta = np.clip(proposed_beta, self.config.beta_min, self.config.beta_max)
         self.beta_clip_count += int(np.count_nonzero(clipped_beta != proposed_beta))
         self.beta[active] = clipped_beta
@@ -42,7 +46,9 @@ class DifferentialSarsaTIDBD(BaseControlAgent):
         self.weights += alpha * delta * self.trace
 
         decay = np.ones_like(self.h)
-        decay[active] = np.maximum(0.0, 1.0 - alpha[active] * self.trace[active])
+        decay[active] = np.maximum(
+            0.0, 1.0 - alpha[active] * features * self.trace[active]
+        )
         self.h = self.h * decay + alpha * delta * self.trace
         return self.record_real_update(delta)
 

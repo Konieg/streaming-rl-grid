@@ -23,16 +23,16 @@ class DifferentialQLambda(BaseControlAgent):
         self.trace_cut_count = 0
 
     def update(self, observation, action, reward, next_observation, next_action) -> float:
-        active = self.coder.active(observation, action)
+        active, features = self.feature_values(observation, action)
         next_values = self.action_values(next_observation, readonly=False)
         next_action_is_greedy = int(next_action) in self.greedy_actions(next_values)
         delta = float(
             reward - self.reward_rate
-            + next_values.max() - self.weights[active].sum()
+            + next_values.max() - self.value_from_features(active, features)
         )
 
         self.trace *= self.config.lambda_
-        self.trace[active] = 1.0
+        self.trace[active] = features
         self.weights += self.alpha * delta * self.trace
         if not next_action_is_greedy:
             self.trace.fill(0.0)

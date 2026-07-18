@@ -3,7 +3,13 @@
 import argparse
 from pathlib import Path
 
-from .config import ALGORITHMS, AppConfig, GOAL_REACHED_BEHAVIORS, PROFILES
+from .config import (
+    ALGORITHMS,
+    FEATURE_REPRESENTATIONS,
+    AppConfig,
+    GOAL_REACHED_BEHAVIORS,
+    PROFILES,
+)
 from .trainer import Trainer
 
 
@@ -17,6 +23,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--height", type=int, default=7)
     parser.add_argument("--obstacles", type=int, default=8)
     parser.add_argument("--algorithm", choices=ALGORITHMS, default="tidbd")
+    parser.add_argument(
+        "--features",
+        choices=FEATURE_REPRESENTATIONS,
+        default="tile_coding",
+        help="Action-value feature representation",
+    )
     parser.add_argument(
         "--fixed-alpha", action="store_true",
         help="Deprecated alias for --algorithm sarsa",
@@ -47,6 +59,7 @@ def main() -> None:
         config.environment.obstacle_coordinates = None
         config.environment.goal_reached_behavior = args.goal_reached_behavior
         config.agent.algorithm = "sarsa" if args.fixed_alpha else args.algorithm
+        config.agent.feature_representation = args.features
         config.agent.planning_steps = args.planning_steps
         trainer = Trainer(config, base_dir=base_dir)
 

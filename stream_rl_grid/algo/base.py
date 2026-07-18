@@ -1,4 +1,4 @@
-"""Shared tile-coded epsilon-greedy interface for differential TD control."""
+"""Shared linear epsilon-greedy interface for differential TD control."""
 
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, Sequence, Tuple
@@ -7,7 +7,6 @@ import numpy as np
 
 if TYPE_CHECKING:
     from ..config import AgentConfig
-    from ..tile_coder import DualTileCoder
 
 
 Observation = Tuple[int, int, int, int, int]
@@ -24,7 +23,7 @@ class BaseControlAgent(ABC):
 
     def __init__(
         self,
-        coder: "DualTileCoder",
+        coder,
         config: "AgentConfig",
         seed: int = 0,
         num_actions: int = 5,
@@ -49,8 +48,20 @@ class BaseControlAgent(ABC):
         return self.config.epsilon
 
     def value(self, observation: Sequence[int], action: int, readonly: bool = False) -> float:
-        active = self.coder.active(observation, action, readonly=readonly)
-        return float(self.weights[active].sum())
+        indices, values = self.feature_values(observation, action, readonly=readonly)
+        return float(np.dot(self.weights[indices], values))
+
+    def feature_values(self, observation, action, readonly: bool = False):
+        if hasattr(self.coder, "feature_values"):
+            return self.coder.feature_values(observation, action, readonly=readonly)
+        indices = self.coder.active(observation, action, readonly=readonly)
+        return indices, np.ones(indices.shape, dtype=np.float64)
+
+    def value_from_features(self, indices, values) -> float:
+        return float(np.dot(self.weights[indices], values))
+
+    def semi_gradient_update(self, indices, values, scale: float) -> None:
+        self.weights[indices] += float(scale) * values
 
     def action_values(self, observation: Sequence[int], readonly: bool = False) -> np.ndarray:
         return np.asarray(
@@ -192,7 +203,10 @@ class BaseControlAgent(ABC):
         self.coder.load_state_dict(state["coder"])
 
     def fixed_step_size(self) -> float:
-        return self.config.effective_initial_step / self.coder.nominal_active_count
+        denominator = float(
+            getattr(self.coder, "step_size_denominator", self.coder.nominal_active_count)
+        )
+        return self.config.effective_initial_step / denominator
 
     def fixed_step_size_summary(self) -> Dict[str, float]:
         alpha = float(getattr(self, "alpha", self.fixed_step_size()))

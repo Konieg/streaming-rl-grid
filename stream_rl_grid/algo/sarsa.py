@@ -22,14 +22,15 @@ class DifferentialSarsa(BaseControlAgent):
         self.alpha = self.fixed_step_size()
 
     def update(self, observation, action, reward, next_observation, next_action) -> float:
-        active = self.coder.active(observation, action)
-        next_active = self.coder.active(next_observation, next_action)
+        active, features = self.feature_values(observation, action)
+        next_active, next_features = self.feature_values(next_observation, next_action)
         delta = float(
             reward - self.reward_rate
-            + self.weights[next_active].sum() - self.weights[active].sum()
+            + self.value_from_features(next_active, next_features)
+            - self.value_from_features(active, features)
         )
         self.trace *= self.config.lambda_
-        self.trace[active] = 1.0
+        self.trace[active] = features
         self.weights += self.alpha * delta * self.trace
         return self.record_real_update(delta)
 

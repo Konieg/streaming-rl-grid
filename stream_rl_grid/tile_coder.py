@@ -78,6 +78,8 @@ class DualTileCoder:
         self.tiles_per_dimension = agent_config.tiles_per_dimension
         self.iht = IndexHashTable(agent_config.iht_size)
 
+    representation_name = "tile_coding"
+
     @property
     def nominal_active_count(self) -> int:
         return 2 * self.num_tilings + 1
@@ -85,6 +87,10 @@ class DualTileCoder:
     @property
     def size(self) -> int:
         return self.iht.size
+
+    @property
+    def step_size_denominator(self) -> float:
+        return float(self.nominal_active_count)
 
     def active(self, observation: Sequence[int], action: int, readonly: bool = False) -> np.ndarray:
         x, y, gx, gy, previous_action = [int(v) for v in observation]
@@ -103,6 +109,10 @@ class DualTileCoder:
             first.append(bias)
         # Collisions after the IHT fills must not turn a binary feature into a count feature.
         return np.unique(np.asarray(first + second, dtype=np.int64))
+
+    def feature_values(self, observation: Sequence[int], action: int, readonly: bool = False):
+        indices = self.active(observation, action, readonly=readonly)
+        return indices, np.ones(indices.shape, dtype=np.float64)
 
     def _scale(self, value: int, size: int) -> float:
         denominator = max(1, size - 1)
