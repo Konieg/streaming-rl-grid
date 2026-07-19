@@ -28,6 +28,10 @@ METHOD_COLORS = {
 }
 
 
+def default_summary_output() -> Path:
+    return Path(__file__).resolve().parents[1] / "phase1_summary"
+
+
 def _read_json(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
@@ -41,6 +45,17 @@ def _mean_se_ci(values: List[float]) -> Tuple[float, float, float, int]:
     mean = float(array.mean())
     se = float(array.std(ddof=1) / np.sqrt(array.size)) if array.size > 1 else 0.0
     return mean, se, 1.96 * se, int(array.size)
+
+
+def _selection_eligible(
+    successful_seeds: int, expected_seeds: int, failed_seeds: int, missing_seeds: int
+) -> bool:
+    """Only fully successful parameter configurations may win a sweep."""
+    return (
+        int(successful_seeds) == int(expected_seeds)
+        and int(failed_seeds) == 0
+        and int(missing_seeds) == 0
+    )
 
 
 def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
@@ -87,28 +102,47 @@ def _add_event_lines(axis, manifest: Dict[str, Any], setting: str) -> None:
             )
 
 
-def aggregate(output: Path, allow_incomplete: bool = False) -> None:
-    manifest = _read_json(output / "experiment_manifest.json")
+def aggregate(
+    input_dir: Path,
+    summary_dir: Path = None,
+    allow_incomplete: bool = False,
+) -> None:
+    summary_dir = default_summary_output() if summary_dir is None else summary_dir
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    manifest = _read_json(input_dir / "experiment_manifest.json")
     jobs = build_jobs(manifest)
     completed = []
     missing = []
+    failed = []
+    status_counts = defaultdict(lambda: {"expected": 0, "failed": 0, "missing": 0})
     for job in jobs:
-        job_dir = output / job["relative_dir"]
+        job_dir = input_dir / job["relative_dir"]
+        key = (
+            job["setting"], job["parameters"]["method"],
+            job["parameters"]["config_id"],
+        )
+        status_counts[key]["expected"] += 1
         summary_path = job_dir / "summary.json"
         if not summary_path.exists():
-            missing.append(job["relative_dir"])
+            failure_path = job_dir / "failure.json"
+            if failure_path.exists():
+                failed.append(job["relative_dir"])
+                status_counts[key]["failed"] += 1
+            else:
+                missing.append(job["relative_dir"])
+                status_counts[key]["missing"] += 1
             continue
         completed.append((job, job_dir, _read_json(summary_path)))
     if missing and not allow_incomplete:
         raise RuntimeError(
-            "%d/%d runs are incomplete. Finish the sweep or pass --allow-incomplete."
+            "%d/%d runs are still pending without a failure record. Finish the sweep "
+            "or pass --allow-incomplete."
             % (len(missing), len(jobs))
         )
     if not completed:
         raise RuntimeError("No completed runs were found.")
 
-    chart_dir = output / "plots"
-    chart_dir.mkdir(parents=True, exist_ok=True)
+    chart_dir = summary_dir
     grouped = defaultdict(list)
     for job, job_dir, summary in completed:
         key = (
@@ -126,6 +160,10 @@ def aggregate(output: Path, allow_incomplete: bool = False) -> None:
         post_mean, post_se, post_ci, _ = _mean_se_ci(postchange)
         recovery_mean, recovery_se, recovery_ci, recovery_n = _mean_se_ci(recovery)
         parameters = entries[0][0]["parameters"]
+        counts = status_counts[(setting, method, config_id)]
+        eligible = _selection_eligible(
+            n, counts["expected"], counts["failed"], counts["missing"]
+        )
         aggregate_rows.append({
             "setting": setting,
             "method": method,
@@ -135,6 +173,10 @@ def aggregate(output: Path, allow_incomplete: bool = False) -> None:
             "lambda": parameters["lambda"],
             "planning_steps": parameters["planning_steps"],
             "n": n,
+            "expected_seed_count": counts["expected"],
+            "failed_seed_count": counts["failed"],
+            "missing_seed_count": counts["missing"],
+            "selection_eligible": eligible,
             "stream_average_reward_mean": reward_mean,
             "stream_average_reward_se": reward_se,
             "stream_average_reward_ci95_halfwidth": reward_ci,
@@ -146,7 +188,7 @@ def aggregate(output: Path, allow_incomplete: bool = False) -> None:
             "recovery_steps_ci95_halfwidth": recovery_ci,
             "recovery_n": recovery_n,
         })
-    _write_csv(output / "aggregate_summary.csv", aggregate_rows)
+    _write_csv(summary_dir / "aggregate_summary.csv", aggregate_rows)
 
     selected = {}
     selected_rows = []
@@ -155,13 +197,14 @@ def aggregate(output: Path, allow_incomplete: bool = False) -> None:
             candidates = [
                 row for row in aggregate_rows
                 if row["setting"] == setting and row["method"] == method
+                and row["selection_eligible"]
             ]
             if not candidates:
                 continue
             best = max(candidates, key=lambda row: row["stream_average_reward_mean"])
             selected[(setting, method)] = best
             selected_rows.append(dict(best))
-    _write_csv(output / "selected_configs.csv", selected_rows)
+    _write_csv(summary_dir / "selected_configs.csv", selected_rows)
 
     for setting in manifest["settings"]:
         figure, axis = plt.subplots(figsize=(13, 5.5))
@@ -193,7 +236,7 @@ def aggregate(output: Path, allow_incomplete: bool = False) -> None:
             axis.plot(steps, mean, color=color, label=METHOD_LABELS[method], linewidth=1.8)
             axis.fill_between(steps, mean - 1.96 * se, mean + 1.96 * se, color=color, alpha=0.16)
         _add_event_lines(axis, manifest, setting)
-        axis.set_title("%s — selected D=55 configurations" % setting)
+        axis.set_title("%s - selected D=55 configurations" % setting)
         axis.set_xlabel("environment step")
         axis.set_ylabel("trailing-1000 mean reward")
         axis.grid(alpha=0.20)
@@ -218,26 +261,39 @@ def aggregate(output: Path, allow_incomplete: bool = False) -> None:
         axes[1].set_ylabel("recovery steps")
         axes[1].set_xticks(x, labels, rotation=20, ha="right")
         axes[1].grid(axis="y", alpha=0.2)
-        figure.suptitle("%s — adaptation metrics" % setting)
+        figure.suptitle("%s - adaptation metrics" % setting)
         figure.tight_layout()
         figure.savefig(chart_dir / ("adaptation_metrics_%s.png" % setting), dpi=180)
         plt.close(figure)
 
-    print("Aggregated %d completed runs into %s" % (len(completed), output))
+    print(
+        "Aggregated %d completed runs from %s into %s"
+        % (len(completed), input_dir, summary_dir)
+    )
+    if failed:
+        print(
+            "Recorded %d numerically failed run(s); their parameter configurations "
+            "were excluded from selection." % len(failed)
+        )
     if missing:
-        print("Warning: %d runs were incomplete." % len(missing))
+        print("Warning: %d runs were still pending." % len(missing))
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Aggregate and plot phase-one sweep results")
     parser.add_argument("--input", type=Path, default=default_output())
+    parser.add_argument("--output", type=Path, default=default_summary_output())
     parser.add_argument("--allow-incomplete", action="store_true")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    aggregate(args.input.resolve(), allow_incomplete=args.allow_incomplete)
+    aggregate(
+        args.input.resolve(),
+        summary_dir=args.output.resolve(),
+        allow_incomplete=args.allow_incomplete,
+    )
 
 
 if __name__ == "__main__":

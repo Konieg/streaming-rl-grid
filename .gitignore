@@ -7,4 +7,5 @@ checkpoints/
 runs/
 benchmark_results/
 experiment_results/
+phase1_summary/
 *.log

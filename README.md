@@ -292,8 +292,9 @@ vertical change lines using:
 python plot_phase1_results.py
 ```
 
-This creates `aggregate_summary.csv`, `selected_configs.csv`, three learning-curve
-figures, and three adaptation-metric figures. Plotting is intentionally separate from
-the GUI and from training.
+This creates the flat `phase1_summary/` directory at the repository root. It contains
+`aggregate_summary.csv`, `selected_configs.csv`, three learning-curve figures, and
+three adaptation-metric figures side by side. Use `--output PATH` to choose another
+summary directory. Plotting is intentionally separate from the GUI and from training.
 
 测试覆盖各算法的 bootstrap target、Watkins trace cutting、Dyna planning、continuing 目标传送、碰撞回退、`stay` 的风效应、地图切换延迟障碍物、TIDBD 数值有限性，以及 checkpoint 后的精确续训。

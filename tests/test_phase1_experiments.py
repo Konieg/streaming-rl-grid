@@ -1,7 +1,7 @@
 import unittest
 
 from stream_rl_grid.metrics import MetricsTracker
-from stream_rl_grid.phase1_plot import _event_steps
+from stream_rl_grid.phase1_plot import _event_steps, _selection_eligible
 from stream_rl_grid.phase1_sweep import build_jobs, make_manifest, parameter_configurations
 
 
@@ -62,6 +62,11 @@ class PhaseOneExperimentTests(unittest.TestCase):
         self.assertEqual(rows[0]["postchange_reward_auc"], 0.0)
         self.assertEqual(rows[0]["postchange_mean_reward"], 0.0)
         self.assertEqual(rows[0]["recovery_steps"], 4)
+
+    def test_parameter_selection_requires_all_seeds_to_finish_successfully(self):
+        self.assertTrue(_selection_eligible(5, 5, 0, 0))
+        self.assertFalse(_selection_eligible(4, 5, 1, 0))
+        self.assertFalse(_selection_eligible(4, 5, 0, 1))
 
 
 if __name__ == "__main__":
