@@ -333,4 +333,43 @@ curves, adaptation plots, post-change-window plots, and CSV summaries are writte
 the flat `eight_algorithm_summary/` directory. Re-running either command skips finished
 runs and resumes incomplete checkpoints.
 
+To repeat the same 200-run protocol with the legacy two-group tile coder while
+reusing the already selected D=55 hyperparameters, run:
+
+```powershell
+python run_eight_algorithm_tile_comparison.py --workers 32
+```
+
+This changes only the value representation to `DualTileCoder` (8 position tilings,
+8 relative-goal tilings, 8 tiles per dimension, shared IHT/weight dimension 65,536).
+Raw results go to `experiment_results/eight_algorithm_tile_comparison/`; plots and
+CSVs go to `eight_algorithm_tile_summary/`. Because the winners were selected under
+D=55, this is a controlled representation-replacement experiment, not a claim that
+each method is optimally tuned for tile coding.
+
+For tile-specific algorithm tuning, run the unified resumable sweep:
+
+```powershell
+python run_tile_coding_sweep.py --workers 32
+```
+
+The tile structure remains fixed and shared across methods. The script sweeps the
+same principal algorithm parameters as the earlier seven-algorithm phase-one grid,
+plus the Dyna-Q+ `kappa` grid: 90 configurations x 3 selection settings x 5 seeds =
+1,350 runs. It automatically excludes numerically failed configurations, writes raw
+runs to `experiment_results/tile_coding_sweep/`, and writes plots plus the three
+setting-specific winners for all eight methods to
+`tile_coding_sweep_summary/selected_configs.csv`.
+
+After the sweep finishes, run the final 200-run five-setting comparison with those
+tile-specific winners using:
+
+```powershell
+python run_eight_algorithm_tile_comparison.py --use-tuned-parameters --workers 32
+```
+
+This writes separate raw results to
+`experiment_results/eight_algorithm_tile_tuned_comparison/` and final plots/CSVs to
+`eight_algorithm_tile_tuned_summary/`.
+
 测试覆盖各算法的 bootstrap target、Watkins trace cutting、Dyna planning、continuing 目标传送、碰撞回退、`stay` 的风效应、地图切换延迟障碍物、TIDBD 数值有限性，以及 checkpoint 后的精确续训。

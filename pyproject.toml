@@ -20,6 +20,8 @@ stream-rl-grid-phase1 = "stream_rl_grid.phase1_sweep:main"
 stream-rl-grid-phase1-plot = "stream_rl_grid.phase1_plot:main"
 stream-rl-grid-dyna-plus-sweep = "stream_rl_grid.dyna_q_plus_sweep:main"
 stream-rl-grid-eight-comparison = "stream_rl_grid.eight_algorithm_comparison:main"
+stream-rl-grid-eight-tile-comparison = "stream_rl_grid.eight_algorithm_tile_comparison:main"
+stream-rl-grid-tile-sweep = "stream_rl_grid.tile_coding_sweep:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

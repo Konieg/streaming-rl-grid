@@ -17,6 +17,14 @@ from stream_rl_grid.eight_algorithm_comparison import (
     METHOD_ORDER as EIGHT_METHODS,
     make_manifest as make_eight_algorithm_manifest,
 )
+from stream_rl_grid.eight_algorithm_tile_comparison import (
+    make_manifest as make_tile_comparison_manifest,
+)
+from stream_rl_grid.features import create_feature_representation
+from stream_rl_grid.tile_coding_sweep import (
+    make_manifest as make_tile_sweep_manifest,
+    parameter_configurations as tile_sweep_parameter_configurations,
+)
 
 
 class PhaseOneExperimentTests(unittest.TestCase):
@@ -55,6 +63,28 @@ class PhaseOneExperimentTests(unittest.TestCase):
         self.assertEqual(manifest["expected_runs"], 405)
         self.assertEqual(len(build_jobs(manifest)), 405)
 
+    def test_all_algorithm_tile_sweep_has_1350_runs(self):
+        source = make_manifest(60_000, [0, 1, 2, 3, 4])
+        manifest = make_tile_sweep_manifest(source, Path("phase1_manifest.json"))
+        configurations = tile_sweep_parameter_configurations()
+        self.assertEqual(len(configurations), 90)
+        self.assertEqual(manifest["expected_runs"], 1_350)
+        self.assertEqual(len(build_jobs(manifest)), 1_350)
+        self.assertEqual(manifest["feature_representation"], "tile_coding")
+        self.assertEqual(
+            {config["method"] for config in configurations}, set(EIGHT_METHODS)
+        )
+        counts = {}
+        for config in configurations:
+            counts[config["method"]] = counts.get(config["method"], 0) + 1
+        self.assertEqual(counts["dyna_q_plus"], 27)
+        first_config = _app_config(manifest, build_jobs(manifest)[0])
+        coder = create_feature_representation(
+            first_config.environment, first_config.agent
+        )
+        self.assertEqual(coder.size, 65_536)
+        self.assertEqual(coder.nominal_active_count, 17)
+
     def test_final_comparison_uses_eight_winners_in_five_settings(self):
         source = make_manifest(60_000, [0, 1, 2, 3, 4])
         dyna_manifest = make_dyna_plus_manifest(source, Path("phase1_manifest.json"))
@@ -89,6 +119,9 @@ class PhaseOneExperimentTests(unittest.TestCase):
             manifest = make_eight_algorithm_manifest(
                 source, old_selected, dyna_manifest, plus_selected
             )
+            tile_manifest = make_tile_comparison_manifest(
+                source, old_selected, dyna_manifest, plus_selected
+            )
 
         self.assertEqual(manifest["expected_runs"], 200)
         self.assertEqual(len(build_jobs(manifest)), 200)
@@ -111,6 +144,15 @@ class PhaseOneExperimentTests(unittest.TestCase):
                     config.agent.dyna_plus_kappa,
                     job["parameters"]["dyna_plus_kappa"],
                 )
+        self.assertEqual(tile_manifest["expected_runs"], 200)
+        self.assertEqual(tile_manifest["feature_representation"], "tile_coding")
+        tile_job = build_jobs(tile_manifest)[0]
+        tile_config = _app_config(tile_manifest, tile_job)
+        tile_coder = create_feature_representation(
+            tile_config.environment, tile_config.agent
+        )
+        self.assertEqual(tile_coder.size, 65_536)
+        self.assertEqual(tile_coder.nominal_active_count, 17)
 
     def test_exact_auc_stream_average_postchange_and_recovery(self):
         tracker = MetricsTracker(

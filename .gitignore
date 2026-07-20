@@ -10,4 +10,7 @@ experiment_results/
 phase1_summary/
 dyna_q_plus_sweep_summary/
 eight_algorithm_summary/
+eight_algorithm_tile_summary/
+tile_coding_sweep_summary/
+eight_algorithm_tile_tuned_summary/
 *.log

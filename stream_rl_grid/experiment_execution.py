@@ -17,6 +17,7 @@ def load_or_create_manifest(output: Path, requested: Dict[str, Any]) -> Dict[str
         comparable = (
             "protocol_version", "name", "steps", "seeds", "settings",
             "parameter_configurations", "schedule", "metrics",
+            "feature_representation", "agent_common",
         )
         if any(existing.get(key) != requested.get(key) for key in comparable):
             raise ValueError(
@@ -31,6 +32,7 @@ def load_or_create_manifest(output: Path, requested: Dict[str, Any]) -> Dict[str
         for key in (
             "setting_seed_manifests", "method_order", "method_labels",
             "winner_source_setting", "source_selected_configs",
+            "representation_protocol",
         ):
             if key not in requested:
                 continue

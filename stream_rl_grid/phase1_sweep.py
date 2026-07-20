@@ -293,7 +293,14 @@ def _app_config(manifest: Dict[str, Any], job: Dict[str, Any]) -> AppConfig:
     common = manifest["agent_common"]
     agent = AgentConfig(
         algorithm=parameters["algorithm"],
-        feature_representation="handcrafted_lfa",
+        feature_representation=manifest["feature_representation"],
+        num_tilings=int(parameters.get(
+            "num_tilings", common.get("num_tilings", 8)
+        )),
+        tiles_per_dimension=int(parameters.get(
+            "tiles_per_dimension", common.get("tiles_per_dimension", 8)
+        )),
+        iht_size=int(parameters.get("iht_size", common.get("iht_size", 65_536))),
         lambda_=float(parameters["lambda"]),
         epsilon=float(common["epsilon"]),
         theta=float(common["tidbd_theta"]),

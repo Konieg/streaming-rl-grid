@@ -145,6 +145,11 @@ def aggregate(
     method_labels = dict(METHOD_LABELS)
     method_labels.update(manifest.get("method_labels", {}))
     method_order = tuple(manifest.get("method_order", METHOD_ORDER))
+    representation_label = {
+        "handcrafted_lfa": "D=55",
+        "handcrafted_lfa_nuisance": "D=71",
+        "tile_coding": "tile coding",
+    }.get(manifest.get("feature_representation"), manifest.get("feature_representation", "unknown"))
     jobs = build_jobs(manifest)
     completed = []
     missing = []
@@ -277,7 +282,9 @@ def aggregate(
             axis.plot(steps, mean, color=color, label=method_labels[method], linewidth=1.8)
             axis.fill_between(steps, mean - 1.96 * se, mean + 1.96 * se, color=color, alpha=0.16)
         _add_event_lines(axis, manifest, setting)
-        axis.set_title("%s - selected D=55 configurations" % setting)
+        axis.set_title(
+            "%s - selected %s configurations" % (setting, representation_label)
+        )
         axis.set_xlabel("environment step")
         axis.set_ylabel("trailing-1000 mean reward")
         axis.grid(alpha=0.20)
