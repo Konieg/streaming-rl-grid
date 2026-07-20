@@ -116,7 +116,7 @@ class AgentAndCheckpointTests(unittest.TestCase):
     def test_fixed_step_algorithms_use_shared_interface_and_restore_exactly(self):
         with tempfile.TemporaryDirectory() as folder:
             for algorithm in (
-                "q_learning", "q_lambda", "sarsa", "dyna_q", "dyna_q_lambda"
+                "q_learning", "q_lambda", "sarsa", "dyna_q", "dyna_q_plus", "dyna_q_lambda"
             ):
                 with self.subTest(algorithm=algorithm):
                     config = self.config()

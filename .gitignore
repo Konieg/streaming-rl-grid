@@ -8,4 +8,6 @@ runs/
 benchmark_results/
 experiment_results/
 phase1_summary/
+dyna_q_plus_sweep_summary/
+eight_algorithm_summary/
 *.log

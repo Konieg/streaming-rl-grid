@@ -114,6 +114,7 @@ class AgentConfig:
     beta_min: float = -20.0
     beta_max: float = 0.0
     planning_steps: int = 5
+    dyna_plus_kappa: float = 0.001
 
     def validate(self) -> None:
         if self.algorithm not in ALGORITHMS:
@@ -139,6 +140,8 @@ class AgentConfig:
             raise ValueError("reward_rate_step must be positive.")
         if self.planning_steps < 0:
             raise ValueError("planning_steps cannot be negative.")
+        if self.dyna_plus_kappa < 0.0:
+            raise ValueError("dyna_plus_kappa cannot be negative.")
         if self.algorithm == "tidbd":
             if self.theta < 0.0:
                 raise ValueError("TIDBD theta cannot be negative.")
@@ -155,7 +158,7 @@ class TrainingConfig:
     checkpoint_dir: str = "checkpoints"
     log_dir: str = "runs"
     record_step_metrics: bool = False
-    post_change_window: int = 1_000
+    post_change_window: int = 500
     recovery_smoothing: int = 250
     recovery_tolerance: float = 0.10
     recovery_horizon: int = 5_000

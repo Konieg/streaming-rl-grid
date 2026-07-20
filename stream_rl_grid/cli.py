@@ -49,6 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--planning-steps", type=int, default=5)
     parser.add_argument(
+        "--dyna-plus-kappa", type=float, default=0.001,
+        help="Dyna-Q+ time-bonus coefficient kappa",
+    )
+    parser.add_argument(
         "--goal-reached-behavior",
         choices=GOAL_REACHED_BEHAVIORS,
         default="random_agent_restart",
@@ -89,6 +93,7 @@ def main() -> None:
         config.agent.algorithm = "sarsa" if args.fixed_alpha else args.algorithm
         config.agent.feature_representation = args.features
         config.agent.planning_steps = args.planning_steps
+        config.agent.dyna_plus_kappa = args.dyna_plus_kappa
         trainer = Trainer(config, base_dir=base_dir)
 
     target = None if args.steps == 0 else trainer.step_count + args.steps

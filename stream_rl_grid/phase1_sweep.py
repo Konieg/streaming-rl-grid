@@ -176,7 +176,7 @@ def make_manifest(steps: int, seeds: Sequence[int]) -> Dict[str, Any]:
         "metrics": {
             "sample_interval": 50,
             "trailing_reward_window": 1_000,
-            "post_change_window": 1_000,
+            "post_change_window": 500,
             "recovery_smoothing": 250,
             "recovery_tolerance": 0.10,
             "recovery_horizon": 5_000,
@@ -236,6 +236,9 @@ def build_jobs(manifest: Dict[str, Any]) -> List[Dict[str, Any]]:
     jobs = []
     for setting in manifest["settings"]:
         for parameters in manifest["parameter_configurations"]:
+            applies_to = parameters.get("applies_to_settings")
+            if applies_to is not None and setting not in applies_to:
+                continue
             for seed in manifest["seeds"]:
                 jobs.append({
                     "setting": setting,
@@ -295,6 +298,7 @@ def _app_config(manifest: Dict[str, Any], job: Dict[str, Any]) -> AppConfig:
         beta_min=float(common["tidbd_beta_min"]),
         beta_max=float(common["tidbd_beta_max"]),
         planning_steps=int(parameters["planning_steps"]),
+        dyna_plus_kappa=float(parameters.get("dyna_plus_kappa", 0.001)),
     )
     metric = manifest["metrics"]
     training = TrainingConfig(

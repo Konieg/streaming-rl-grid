@@ -18,6 +18,8 @@ stream-rl-grid-headless = "stream_rl_grid.cli:main"
 stream-rl-grid-benchmark = "stream_rl_grid.benchmark:main"
 stream-rl-grid-phase1 = "stream_rl_grid.phase1_sweep:main"
 stream-rl-grid-phase1-plot = "stream_rl_grid.phase1_plot:main"
+stream-rl-grid-dyna-plus-sweep = "stream_rl_grid.dyna_q_plus_sweep:main"
+stream-rl-grid-eight-comparison = "stream_rl_grid.eight_algorithm_comparison:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

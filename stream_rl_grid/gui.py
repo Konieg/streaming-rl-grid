@@ -46,7 +46,7 @@ class TrainingPanel:
         "feature_representation", "num_tilings", "tiles_per_dimension", "iht_size",
         "lambda_", "epsilon",
         "theta", "effective_initial_step", "reward_rate_step", "beta_min", "beta_max",
-        "planning_steps",
+        "planning_steps", "dyna_plus_kappa",
     )
 
     def __init__(self, root: tk.Tk):
@@ -172,6 +172,7 @@ class TrainingPanel:
         self._add_entry(agent_tab, "Beta minimum", "beta_min", 9)
         self._add_entry(agent_tab, "Beta maximum", "beta_max", 10)
         self._add_entry(agent_tab, "Dyna planning steps", "planning_steps", 11)
+        self._add_entry(agent_tab, "Dyna-Q+ kappa", "dyna_plus_kappa", 12)
 
         self._add_entry(run_tab, "Metric window", "metric_window", 0)
         self._add_entry(run_tab, "Chart points", "chart_points", 1)
@@ -440,6 +441,7 @@ class TrainingPanel:
             reward_rate_step=float(self.variables["reward_rate_step"].get()),
             beta_min=float(self.variables["beta_min"].get()), beta_max=float(self.variables["beta_max"].get()),
             planning_steps=int(self.variables["planning_steps"].get()),
+            dyna_plus_kappa=float(self.variables["dyna_plus_kappa"].get()),
         )
         training = TrainingConfig(
             metric_window=int(self.variables["metric_window"].get()),

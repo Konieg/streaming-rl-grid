@@ -42,7 +42,7 @@ z <- lambda * z
 z[active_features] <- 1
 $$
 
-Q(λ) 和 Dyna-Q(λ) 采用 Watkins trace cutting：如果 behavior policy 选出的下一动作不是 greedy action，则在本次更新后清空资格迹。Dyna 的模型是从原始 `(observation, action)` 到最新 `(reward, next_observation)` 的表；每个真实步之后执行 `planning_steps` 次模型更新，平均奖励率只由真实转移更新。Dyna-Q(λ) 的资格迹只沿连续的真实经验流传播，随机抽取且彼此不连续的 planning samples 仍使用 one-step Q-learning。
+Q(λ) 和 Dyna-Q(λ) 采用 Watkins trace cutting：如果 behavior policy 选出的下一动作不是 greedy action，则在本次更新后清空资格迹。Dyna 的模型是从原始 `(observation, action)` 到最新 `(reward, next_observation)` 的表；每个真实步之后执行 `planning_steps` 次模型更新，平均奖励率只由真实转移更新。Dyna-Q(λ) 的资格迹只沿连续的真实经验流传播，随机抽取且彼此不连续的 planning samples 仍使用 one-step Q-learning。Dyna-Q+ 是独立算法选项：已观察状态的所有动作都会进入模型，未尝试动作初始为零奖励自环，planning reward 使用 `r + kappa * sqrt(tau)`；`tau` 按真实环境步计数，bonus 不用于真实更新或平均奖励率更新。
 
 TIDBD 为每个权重维护 $`$beta_i = log(alpha_i)$`$ 和元迹 $H_i$：
 
@@ -151,6 +151,7 @@ python -m stream_rl_grid.cli --algorithm q_lambda --steps 50000
 python -m stream_rl_grid.cli --algorithm sarsa --steps 50000
 python -m stream_rl_grid.cli --algorithm dyna_q --planning-steps 5 --steps 50000
 python -m stream_rl_grid.cli --algorithm dyna_q_lambda --planning-steps 5 --steps 50000
+python -m stream_rl_grid.cli --algorithm dyna_q_plus --planning-steps 5 --dyna-plus-kappa 0.001 --steps 50000
 ```
 
 自由组合非平稳因素，例如只改变转移机制：
@@ -206,7 +207,9 @@ python -m unittest discover -s tests -v
 
 Algorithms share the interface in `stream_rl_grid/algo/base.py` and are registered by
 their implementations. `AgentConfig.algorithm` accepts `"q_learning"`, `"q_lambda"`,
-`"sarsa"`, `"dyna_q"`, or `"tidbd"`; the GUI exposes the same selector.
+`"sarsa"`, `"dyna_q"`, `"dyna_q_plus"`, `"dyna_q_lambda"`, or `"tidbd"`;
+the GUI exposes the same selector and only shows parameters used by the selected
+algorithm.
 The policy shown by the GUI is a frozen `(height, width, 5)` epsilon-greedy probability
 matrix built from the current learned parameters; it is separate from the action sampled
 by the online behavior loop.
@@ -296,5 +299,38 @@ This creates the flat `phase1_summary/` directory at the repository root. It con
 `aggregate_summary.csv`, `selected_configs.csv`, three learning-curve figures, and
 three adaptation-metric figures side by side. Use `--output PATH` to choose another
 summary directory. Plotting is intentionally separate from the GUI and from training.
+It also reconstructs exact 250-, 500-, and 1,000-step post-change means from the
+cumulative rewards already stored in each `metrics.csv`, writes
+`postchange_window_summary.csv`, and creates one
+`postchange_reward_windows_<setting>.png` sensitivity plot per setting. This
+post-processing does not require retraining.
+
+### Final Dyna-Q+ selection and eight-algorithm comparison
+
+The final experiment is intentionally split into exactly two resumable commands.
+First select Dyna-Q+ parameters (`alpha` x planning steps x `kappa`, 405 runs):
+
+```powershell
+python run_dyna_q_plus_sweep.py --workers 32
+```
+
+This reuses the original phase-one seeds, maps, goal paths, schedules, and the three
+original settings. Raw runs go to `experiment_results/dyna_q_plus_sweep/`; winners and
+plots go to the flat `dyna_q_plus_sweep_summary/` directory.
+
+After that command finishes, run all eight algorithms with their selected parameters
+under wind-only, goal-only, obstacles-only, reward-only, and combined settings
+(200 runs), then plot everything automatically:
+
+```powershell
+python run_eight_algorithm_comparison.py --workers 32
+```
+
+Wind, goal, and obstacle experiments use each algorithm's `transition_shift` winner;
+reward-only uses its `reward_shift` winner; combined uses its `combined` winner. Raw
+runs go to `experiment_results/eight_algorithm_comparison/`, while all five learning
+curves, adaptation plots, post-change-window plots, and CSV summaries are written to
+the flat `eight_algorithm_summary/` directory. Re-running either command skips finished
+runs and resumes incomplete checkpoints.
 
 测试覆盖各算法的 bootstrap target、Watkins trace cutting、Dyna planning、continuing 目标传送、碰撞回退、`stay` 的风效应、地图切换延迟障碍物、TIDBD 数值有限性，以及 checkpoint 后的精确续训。

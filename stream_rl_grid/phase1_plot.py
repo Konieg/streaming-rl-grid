@@ -26,6 +26,8 @@ METHOD_COLORS = {
         ("#4c78a8", "#f58518", "#e45756", "#72b7b2", "#54a24b", "#b279a2", "#ff9da6"),
     )
 }
+METHOD_COLORS["dyna_q_plus"] = "#9c755f"
+POST_CHANGE_WINDOWS = (250, 500, 1_000)
 
 
 def default_summary_output() -> Path:
@@ -65,6 +67,36 @@ def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _postchange_mean_from_sampled_csv(job_dir: Path, window: int) -> float:
+    """Exactly reconstruct an event-window mean from cumulative sampled reward.
+
+    Phase-one samples, event boundaries, and supported windows are all aligned to
+    50 environment steps. The cumulative reward AUC therefore retains the exact
+    reward sum at both ends of every requested interval.
+    """
+    with (job_dir / "metrics.csv").open("r", newline="", encoding="utf-8") as handle:
+        metric_rows = list(csv.DictReader(handle))
+    cumulative = {0: 0.0}
+    for row in metric_rows:
+        cumulative[int(row["step"])] = float(row["reward_auc"])
+    final_step = max(cumulative)
+    with (job_dir / "events.csv").open("r", newline="", encoding="utf-8") as handle:
+        event_rows = list(csv.DictReader(handle))
+    means = []
+    for event in event_rows:
+        start = int(event["step"])
+        end = min(final_step, int(event["next_change_step"]), start + int(window))
+        if end <= start:
+            continue
+        if start not in cumulative or end not in cumulative:
+            raise ValueError(
+                "Window boundaries are absent from sampled cumulative reward: %s [%d, %d]"
+                % (job_dir, start, end)
+            )
+        means.append((cumulative[end] - cumulative[start]) / (end - start))
+    return float(np.mean(means)) if means else float("nan")
 
 
 def _event_steps(manifest: Dict[str, Any], event_type: str) -> List[int]:
@@ -110,6 +142,9 @@ def aggregate(
     summary_dir = default_summary_output() if summary_dir is None else summary_dir
     summary_dir.mkdir(parents=True, exist_ok=True)
     manifest = _read_json(input_dir / "experiment_manifest.json")
+    method_labels = dict(METHOD_LABELS)
+    method_labels.update(manifest.get("method_labels", {}))
+    method_order = tuple(manifest.get("method_order", METHOD_ORDER))
     jobs = build_jobs(manifest)
     completed = []
     missing = []
@@ -154,7 +189,10 @@ def aggregate(
     aggregate_rows = []
     for (setting, method, config_id), entries in sorted(grouped.items()):
         rewards = [entry[2]["metrics"]["stream_average_reward"] for entry in entries]
-        postchange = [entry[2]["event_metrics"]["mean_postchange_reward"] for entry in entries]
+        postchange = [
+            _postchange_mean_from_sampled_csv(entry[1], 500)
+            for entry in entries
+        ]
         recovery = [entry[2]["event_metrics"]["mean_recovery_steps"] for entry in entries]
         reward_mean, reward_se, reward_ci, n = _mean_se_ci(rewards)
         post_mean, post_se, post_ci, _ = _mean_se_ci(postchange)
@@ -167,11 +205,12 @@ def aggregate(
         aggregate_rows.append({
             "setting": setting,
             "method": method,
-            "method_label": METHOD_LABELS[method],
+            "method_label": method_labels[method],
             "config_id": config_id,
             "effective_initial_step": parameters["effective_initial_step"],
             "lambda": parameters["lambda"],
             "planning_steps": parameters["planning_steps"],
+            "dyna_plus_kappa": parameters.get("dyna_plus_kappa", ""),
             "n": n,
             "expected_seed_count": counts["expected"],
             "failed_seed_count": counts["failed"],
@@ -180,6 +219,7 @@ def aggregate(
             "stream_average_reward_mean": reward_mean,
             "stream_average_reward_se": reward_se,
             "stream_average_reward_ci95_halfwidth": reward_ci,
+            "postchange_window": 500,
             "postchange_reward_mean": post_mean,
             "postchange_reward_se": post_se,
             "postchange_reward_ci95_halfwidth": post_ci,
@@ -193,7 +233,7 @@ def aggregate(
     selected = {}
     selected_rows = []
     for setting in manifest["settings"]:
-        for method in METHOD_ORDER:
+        for method in method_order:
             candidates = [
                 row for row in aggregate_rows
                 if row["setting"] == setting and row["method"] == method
@@ -206,9 +246,10 @@ def aggregate(
             selected_rows.append(dict(best))
     _write_csv(summary_dir / "selected_configs.csv", selected_rows)
 
+    postchange_window_rows = []
     for setting in manifest["settings"]:
         figure, axis = plt.subplots(figsize=(13, 5.5))
-        for method in METHOD_ORDER:
+        for method in method_order:
             best = selected.get((setting, method))
             if best is None:
                 continue
@@ -233,7 +274,7 @@ def aggregate(
                 if matrix.shape[0] > 1 else np.zeros_like(mean)
             )
             color = METHOD_COLORS[method]
-            axis.plot(steps, mean, color=color, label=METHOD_LABELS[method], linewidth=1.8)
+            axis.plot(steps, mean, color=color, label=method_labels[method], linewidth=1.8)
             axis.fill_between(steps, mean - 1.96 * se, mean + 1.96 * se, color=color, alpha=0.16)
         _add_event_lines(axis, manifest, setting)
         axis.set_title("%s - selected D=55 configurations" % setting)
@@ -245,8 +286,8 @@ def aggregate(
         figure.savefig(chart_dir / ("learning_curves_%s.png" % setting), dpi=180)
         plt.close(figure)
 
-        methods = [method for method in METHOD_ORDER if (setting, method) in selected]
-        labels = [METHOD_LABELS[method] for method in methods]
+        methods = [method for method in method_order if (setting, method) in selected]
+        labels = [method_labels[method] for method in methods]
         post = [selected[(setting, method)]["postchange_reward_mean"] for method in methods]
         post_ci = [selected[(setting, method)]["postchange_reward_ci95_halfwidth"] for method in methods]
         recovery = [selected[(setting, method)]["recovery_steps_mean"] for method in methods]
@@ -265,6 +306,52 @@ def aggregate(
         figure.tight_layout()
         figure.savefig(chart_dir / ("adaptation_metrics_%s.png" % setting), dpi=180)
         plt.close(figure)
+
+        # These values can be reconstructed exactly from old phase-one metrics.csv
+        # files, so changing the comparison windows does not require retraining.
+        figure, axis = plt.subplots(figsize=(12, 5.5))
+        width = 0.24
+        for window_index, window in enumerate(POST_CHANGE_WINDOWS):
+            means = []
+            cis = []
+            for method in methods:
+                best = selected[(setting, method)]
+                entries = grouped[(setting, method, best["config_id"])]
+                seed_values = [
+                    _postchange_mean_from_sampled_csv(job_dir, window)
+                    for _, job_dir, _ in entries
+                ]
+                mean, se, ci, n = _mean_se_ci(seed_values)
+                means.append(mean)
+                cis.append(ci)
+                postchange_window_rows.append({
+                    "setting": setting,
+                    "method": method,
+                    "method_label": method_labels[method],
+                    "config_id": best["config_id"],
+                    "window": window,
+                    "mean": mean,
+                    "se": se,
+                    "ci95_halfwidth": ci,
+                    "n": n,
+                })
+            offset = (window_index - (len(POST_CHANGE_WINDOWS) - 1) / 2.0) * width
+            axis.bar(
+                x + offset, means, width=width, yerr=cis, capsize=3,
+                alpha=0.82, label="%d steps" % window,
+            )
+        axis.set_ylabel("post-change mean reward")
+        axis.set_xticks(x, labels, rotation=20, ha="right")
+        axis.set_title("%s - post-change window sensitivity" % setting)
+        axis.grid(axis="y", alpha=0.2)
+        axis.legend()
+        figure.tight_layout()
+        figure.savefig(
+            chart_dir / ("postchange_reward_windows_%s.png" % setting), dpi=180
+        )
+        plt.close(figure)
+
+    _write_csv(summary_dir / "postchange_window_summary.csv", postchange_window_rows)
 
     print(
         "Aggregated %d completed runs from %s into %s"

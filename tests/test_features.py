@@ -91,7 +91,7 @@ class HandcraftedFeatureTests(unittest.TestCase):
         state = (0, 0, 4, 4, 0)
         next_state = (1, 0, 4, 4, 1)
         for algorithm in (
-            "q_learning", "q_lambda", "sarsa", "dyna_q", "dyna_q_lambda",
+            "q_learning", "q_lambda", "sarsa", "dyna_q", "dyna_q_plus", "dyna_q_lambda",
             "tidbd",
         ):
             with self.subTest(algorithm=algorithm):
@@ -155,7 +155,7 @@ class HandcraftedFeatureTests(unittest.TestCase):
         state = (0, 0, 4, 4, 0, 3)
         next_state = (1, 0, 4, 4, 1, 12)
         for algorithm in (
-            "q_learning", "q_lambda", "sarsa", "dyna_q", "dyna_q_lambda",
+            "q_learning", "q_lambda", "sarsa", "dyna_q", "dyna_q_plus", "dyna_q_lambda",
             "tidbd",
         ):
             with self.subTest(algorithm=algorithm):

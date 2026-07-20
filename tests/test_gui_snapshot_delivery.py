@@ -51,6 +51,7 @@ class GuiSnapshotDeliveryTests(unittest.TestCase):
             "q_lambda": {"lambda_"},
             "sarsa": {"lambda_"},
             "dyna_q": {"planning_steps"},
+            "dyna_q_plus": {"planning_steps", "dyna_plus_kappa"},
             "dyna_q_lambda": {"lambda_", "planning_steps"},
             "tidbd": {"lambda_", "theta", "beta_min", "beta_max"},
         }

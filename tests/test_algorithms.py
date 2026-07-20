@@ -4,6 +4,7 @@ import numpy as np
 
 from stream_rl_grid.algo import (
     DifferentialDynaQ,
+    DifferentialDynaQPlus,
     DifferentialDynaQLambda,
     DifferentialQLambda,
     DifferentialQLearning,
@@ -130,6 +131,35 @@ class DifferentialAlgorithmTests(unittest.TestCase):
         self.assertEqual(agent.update_count, 1)
         self.assertEqual(agent.planning_update_count, 1)
         self.assertEqual(len(agent.model), 1)
+
+    def test_dyna_q_plus_adds_untried_actions_as_zero_reward_self_loops(self):
+        agent, _ = self.initialized_agent(DifferentialDynaQPlus, "dyna_q_plus")
+        agent.update(self.state, 0, 3.0, self.next_state, None)
+
+        self.assertEqual(len(agent.model), 4)
+        self.assertEqual(agent.model[(self.state, 1)], (0.0, self.state))
+        self.assertEqual(
+            agent.model[(self.next_state, 0)], (0.0, self.next_state)
+        )
+        self.assertEqual(agent.last_real_visit[(self.state, 0)], 1)
+        self.assertEqual(agent.last_real_visit[(self.state, 1)], 0)
+
+    def test_dyna_q_plus_bonus_is_used_only_during_planning(self):
+        config = self.config("dyna_q_plus")
+        config.dyna_plus_kappa = 0.25
+        config.planning_steps = 1
+        coder = StubCoder()
+        agent = DifferentialDynaQPlus(coder, config, num_actions=2)
+        key = (self.state, 1)
+        agent.model[key] = (0.0, self.state)
+        agent.last_real_visit[key] = 0
+        agent.real_time = 16
+
+        agent._run_planning_updates()
+
+        self.assertEqual(agent.value(self.state, 1), 1.0)
+        self.assertEqual(agent.reward_rate, 0.0)
+        self.assertEqual(agent.update_count, 0)
 
     def test_dyna_q_lambda_cuts_trace_after_exploratory_action(self):
         agent, _ = self.initialized_agent(

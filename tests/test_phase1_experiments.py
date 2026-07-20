@@ -1,8 +1,21 @@
+import csv
+import tempfile
 import unittest
+from pathlib import Path
 
 from stream_rl_grid.metrics import MetricsTracker
 from stream_rl_grid.phase1_plot import _event_steps, _selection_eligible
-from stream_rl_grid.phase1_sweep import build_jobs, make_manifest, parameter_configurations
+from stream_rl_grid.phase1_sweep import (
+    METHOD_LABELS, _app_config, build_jobs, make_manifest, parameter_configurations,
+)
+from stream_rl_grid.dyna_q_plus_sweep import (
+    make_manifest as make_dyna_plus_manifest,
+    parameter_configurations as dyna_plus_parameter_configurations,
+)
+from stream_rl_grid.eight_algorithm_comparison import (
+    METHOD_ORDER as EIGHT_METHODS,
+    make_manifest as make_eight_algorithm_manifest,
+)
 
 
 class PhaseOneExperimentTests(unittest.TestCase):
@@ -34,6 +47,69 @@ class PhaseOneExperimentTests(unittest.TestCase):
         self.assertEqual(len(_event_steps(manifest, "obstacles")), 9)
         self.assertEqual(len(_event_steps(manifest, "reward")), 9)
 
+    def test_dyna_q_plus_sweep_has_405_runs(self):
+        source = make_manifest(60_000, [0, 1, 2, 3, 4])
+        manifest = make_dyna_plus_manifest(source, Path("phase1_manifest.json"))
+        self.assertEqual(len(dyna_plus_parameter_configurations()), 27)
+        self.assertEqual(manifest["expected_runs"], 405)
+        self.assertEqual(len(build_jobs(manifest)), 405)
+
+    def test_final_comparison_uses_eight_winners_in_five_settings(self):
+        source = make_manifest(60_000, [0, 1, 2, 3, 4])
+        dyna_manifest = make_dyna_plus_manifest(source, Path("phase1_manifest.json"))
+        old_winners = {}
+        for config in source["parameter_configurations"]:
+            old_winners.setdefault(config["method"], config)
+        plus_winner = dyna_manifest["parameter_configurations"][0]
+        with tempfile.TemporaryDirectory() as folder:
+            old_selected = Path(folder) / "phase1_selected.csv"
+            plus_selected = Path(folder) / "plus_selected.csv"
+            with old_selected.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(
+                    handle, fieldnames=("setting", "method", "config_id")
+                )
+                writer.writeheader()
+                for setting in ("transition_shift", "reward_shift", "combined"):
+                    for method in METHOD_LABELS:
+                        writer.writerow({
+                            "setting": setting, "method": method,
+                            "config_id": old_winners[method]["config_id"],
+                        })
+            with plus_selected.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(
+                    handle, fieldnames=("setting", "method", "config_id")
+                )
+                writer.writeheader()
+                for setting in ("transition_shift", "reward_shift", "combined"):
+                    writer.writerow({
+                        "setting": setting, "method": "dyna_q_plus",
+                        "config_id": plus_winner["config_id"],
+                    })
+            manifest = make_eight_algorithm_manifest(
+                source, old_selected, dyna_manifest, plus_selected
+            )
+
+        self.assertEqual(manifest["expected_runs"], 200)
+        self.assertEqual(len(build_jobs(manifest)), 200)
+        self.assertEqual(set(manifest["settings"]), {
+            "wind_only", "goal_only", "obstacles_only", "reward_only", "combined",
+        })
+        self.assertEqual(tuple(manifest["method_order"]), EIGHT_METHODS)
+        self.assertEqual(len(manifest["parameter_configurations"]), 40)
+        self.assertEqual(
+            {job["parameters"]["method"] for job in build_jobs(manifest)},
+            set(EIGHT_METHODS),
+        )
+        for job in build_jobs(manifest):
+            config = _app_config(manifest, job)
+            config.validate()
+            if job["parameters"]["method"] == "dyna_q_plus":
+                self.assertEqual(config.agent.algorithm, "dyna_q_plus")
+                self.assertEqual(
+                    config.agent.dyna_plus_kappa,
+                    job["parameters"]["dyna_plus_kappa"],
+                )
+
     def test_exact_auc_stream_average_postchange_and_recovery(self):
         tracker = MetricsTracker(
             window=4,
@@ -62,6 +138,27 @@ class PhaseOneExperimentTests(unittest.TestCase):
         self.assertEqual(rows[0]["postchange_reward_auc"], 0.0)
         self.assertEqual(rows[0]["postchange_mean_reward"], 0.0)
         self.assertEqual(rows[0]["recovery_steps"], 4)
+
+    def test_recovery_tolerance_uses_half_point_minimum_scale(self):
+        tracker = MetricsTracker(
+            window=2, chart_points=10, sample_interval=1,
+            record_step_metrics=True, post_change_window=2,
+            recovery_smoothing=2, recovery_tolerance=0.10,
+            recovery_horizon=4,
+        )
+        # Baseline 0.2 gives a 0.05 tolerance and threshold 0.15. With the old
+        # minimum scale 1.0, the first post-change window (mean 0.12) recovered.
+        rewards = [0.2, 0.2, 0.12, 0.12, 0.16, 0.16]
+        for step, reward in enumerate(rewards, start=1):
+            tracker.update(
+                step, reward, 0.0,
+                {"events": ["wind_phase:1"] if step == 2 else []},
+                reward_rate=0.0, alpha_mean=0.1,
+            )
+        row = tracker.change_metric_rows()[0]
+        self.assertAlmostEqual(row["prechange_mean_reward"], 0.2)
+        self.assertEqual(row["recovery_steps"], 4)
+        self.assertEqual(row["postchange_window_250"], 4)
 
     def test_parameter_selection_requires_all_seeds_to_finish_successfully(self):
         self.assertTrue(_selection_eligible(5, 5, 0, 0))

@@ -6,6 +6,9 @@ from typing import Any, Deque, Dict, List
 import numpy as np
 
 
+POST_CHANGE_WINDOWS = (250, 500, 1_000)
+
+
 class MetricsTracker:
     def __init__(
         self,
@@ -188,11 +191,11 @@ class MetricsTracker:
                     dtype=np.float64,
                 )
                 smoothed = np.convolve(recovery_signal, kernel, mode="valid")
-                tolerance = self.recovery_tolerance * max(1.0, abs(baseline))
+                tolerance = self.recovery_tolerance * max(0.5, abs(baseline))
                 recovered = np.flatnonzero(smoothed >= baseline - tolerance)
                 if recovered.size:
                     recovery_steps = int(recovered[0] + self.recovery_smoothing)
-            rows.append({
+            row = {
                 "step": step,
                 "event_type": event["event_type"],
                 "event": event["event"],
@@ -204,7 +207,19 @@ class MetricsTracker:
                 "recovery_steps": recovery_steps,
                 "recovered_before_next_change": recovery_steps is not None,
                 "next_change_step": int(next_step),
-            })
+            }
+            for window in POST_CHANGE_WINDOWS:
+                window_end = min(len(rewards), next_step, step + window)
+                window_rewards = rewards[step:window_end]
+                row["postchange_window_%d" % window] = int(window_rewards.size)
+                row["postchange_reward_auc_%d" % window] = float(
+                    np.sum(window_rewards)
+                )
+                row["postchange_mean_reward_%d" % window] = (
+                    float(np.mean(window_rewards))
+                    if window_rewards.size else float("nan")
+                )
+            rows.append(row)
         return rows
 
     def curves(self) -> Dict[str, List[float]]:
