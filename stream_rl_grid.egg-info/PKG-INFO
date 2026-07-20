@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: stream-rl-grid
+Version: 0.1.0
+Summary: Tile-coded differential TD control in a continual non-stationary windy grid world
+Requires-Python: >=3.9
+Requires-Dist: numpy>=1.21
+Requires-Dist: matplotlib>=3.5

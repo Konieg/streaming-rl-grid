@@ -1,0 +1,6 @@
+[console_scripts]
+stream-rl-grid = stream_rl_grid.gui:main
+stream-rl-grid-benchmark = stream_rl_grid.benchmark:main
+stream-rl-grid-headless = stream_rl_grid.cli:main
+stream-rl-grid-phase1 = stream_rl_grid.phase1_sweep:main
+stream-rl-grid-phase1-plot = stream_rl_grid.phase1_plot:main
