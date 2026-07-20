@@ -89,12 +89,14 @@ class ContinualWindyGridWorld:
 
         before = self.agent_state
         collision = False
+        invalid_action = False
         candidate = before
         dx, dy = ACTIONS[action]
         if (dx, dy) != (0, 0):
             proposed = (candidate[0] + dx, candidate[1] + dy)
             if not self._is_legal(proposed):
                 collision = True
+                invalid_action = True
             else:
                 candidate = proposed
 
@@ -130,7 +132,7 @@ class ContinualWindyGridWorld:
         self.step_count += 1
         self.last_events = []
         self._advance_schedules()
-        info = self._info(collision, reached_goal, wind)
+        info = self._info(collision, reached_goal, wind, invalid_action=invalid_action)
         info["state_before"] = before
         info["state_after_dynamics"] = candidate
         return self.observation(), float(reward), False, False, info
@@ -363,9 +365,12 @@ class ContinualWindyGridWorld:
     def _is_legal(self, state: Coord) -> bool:
         return self._in_bounds(state) and state not in self.active_obstacles
 
-    def _info(self, collision: bool, reached_goal: bool, wind: Coord) -> Dict[str, Any]:
+    def _info(
+        self, collision: bool, reached_goal: bool, wind: Coord, invalid_action: bool = False
+    ) -> Dict[str, Any]:
         return {
             "collision": collision,
+            "invalid_action": bool(invalid_action),
             "goal_reached": reached_goal,
             "wind": wind,
             "wind_phase": self.wind_phase,

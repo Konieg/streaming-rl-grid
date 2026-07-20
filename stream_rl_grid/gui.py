@@ -1,5 +1,7 @@
 """Tkinter control panel for configuring, training, saving, and inspecting the agent."""
 
+import csv
+import json
 import queue
 import threading
 import time
@@ -22,7 +24,9 @@ Coord = Tuple[int, int]
 
 
 class TrainingPanel:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, fixed_steps: int = 0):
+        if int(fixed_steps) < 0:
+            raise ValueError("fixed_steps must be non-negative.")
         self.root = root
         self.root.title("Streaming RL Algorithms - Continual Windy Grid")
         self.root.geometry("1450x880")
@@ -39,6 +43,8 @@ class TrainingPanel:
         self.preview_context = 0
         self.selected_obstacle: Optional[Coord] = None
         self.last_snapshot: Optional[Dict[str, Any]] = None
+        self.fixed_steps = int(fixed_steps)
+        self.target_step: Optional[int] = None
         self._canvas_geometry = (0.0, 0.0, 1.0)
         self._grid_shape: Optional[Tuple[int, int]] = None
         self._grid_geometry: Optional[Tuple[float, float, float, int, int]] = None
@@ -115,6 +121,10 @@ class TrainingPanel:
         self._add_entry(run_tab, "Auto-checkpoint steps", "auto_checkpoint_steps", 3)
         self._add_entry(run_tab, "Checkpoint folder", "checkpoint_dir", 4)
         self._add_entry(run_tab, "Log folder", "log_dir", 5)
+        self._add_entry(run_tab, "Adaptation recovery ratio", "adaptation_recovery_ratio", 6)
+        self._add_entry(run_tab, "Adaptation recovery window", "adaptation_recovery_window", 7)
+        self._add_entry(run_tab, "Adaptation sustain steps", "adaptation_sustain_steps", 8)
+        self._add_entry(run_tab, "Adaptation baseline floor", "adaptation_baseline_floor", 9)
 
         button_box = ttk.LabelFrame(controls, text="Controls")
         button_box.pack(fill=tk.X, pady=(8, 0))
@@ -153,7 +163,12 @@ class TrainingPanel:
         metric_names = [
             ("step", "Step"), ("average_reward", "Window avg reward"),
             ("reward_rate", "Estimated reward rate"), ("goals_per_1000_steps", "Goals / 1000"),
-            ("collision_rate", "Collision rate"), ("abs_td_error", "Mean |TD error|"),
+            ("goal_count_window", "Goals in window"),
+            ("mean_steps_between_goals", "Mean inter-goal steps"),
+            ("collision_rate", "Collision rate"), ("invalid_action_rate", "Invalid-action rate"),
+            ("average_reward_estimation_error", "|R-bar - rolling reward|"),
+            ("adaptation_delay_median", "Median adaptation delay"),
+            ("abs_td_error", "Mean |TD error|"),
             ("epsilon", "Current epsilon"), ("td_error_magnitude", "Smoothed |TD error|"),
             ("alpha_mean", "Mean step size"), ("alpha_max", "Max step size"),
             ("q_parameter_count", "Q-table parameters"),
@@ -296,6 +311,10 @@ class TrainingPanel:
             ui_update_steps=int(self.variables["ui_update_steps"].get()),
             auto_checkpoint_steps=int(self.variables["auto_checkpoint_steps"].get()),
             checkpoint_dir=self.variables["checkpoint_dir"].get(), log_dir=self.variables["log_dir"].get(),
+            adaptation_recovery_ratio=float(self.variables["adaptation_recovery_ratio"].get()),
+            adaptation_recovery_window=int(self.variables["adaptation_recovery_window"].get()),
+            adaptation_sustain_steps=int(self.variables["adaptation_sustain_steps"].get()),
+            adaptation_baseline_floor=float(self.variables["adaptation_baseline_floor"].get()),
         )
         config = AppConfig(env, agent, training)
         config.validate()
@@ -467,13 +486,20 @@ class TrainingPanel:
         self.pause_event.clear()
         self.save_event.clear()
         self._take_pending_snapshot()
+        self.target_step = (
+            self.trainer.step_count + self.fixed_steps
+            if self.trainer is not None and self.fixed_steps > 0
+            else None
+        )
         self.worker = threading.Thread(target=self._training_loop, name="stream-rl-training", daemon=True)
         self.worker.start()
         self.start_button.configure(state=tk.DISABLED)
         self.pause_button.configure(state=tk.NORMAL, text="Pause")
         self.save_button.configure(state=tk.NORMAL)
         self.stop_button.configure(state=tk.NORMAL)
-        self.status_var.set("Training")
+        self.status_var.set(
+            "Training to step %d" % self.target_step if self.target_step is not None else "Training"
+        )
         if self.trainer is not None:
             self._render_snapshot(self.trainer.snapshot())
 
@@ -482,6 +508,10 @@ class TrainingPanel:
         try:
             last_snapshot_time = 0.0
             while not self.stop_event.is_set():
+                if self.target_step is not None and self.trainer.step_count >= self.target_step:
+                    self._publish_snapshot(self.trainer.snapshot())
+                    self.messages.put(("completed", self.target_step))
+                    return
                 if self.save_event.is_set():
                     path = self.trainer.save()
                     self.save_event.clear()
@@ -489,8 +519,11 @@ class TrainingPanel:
                 if self.pause_event.is_set():
                     time.sleep(0.05)
                     continue
+                batch = self.trainer.config.training.ui_update_steps
+                if self.target_step is not None:
+                    batch = min(batch, self.target_step - self.trainer.step_count)
                 self.trainer.run_steps(
-                    self.trainer.config.training.ui_update_steps,
+                    batch,
                     stop_event=self.stop_event,
                     with_snapshot=False,
                 )
@@ -546,11 +579,11 @@ class TrainingPanel:
         self.save_event.set()
         self.status_var.set("Checkpoint requested...")
 
-    def save_curves(self) -> None:
-        """Save both live curve panels with a local timestamp in the image and filename."""
+    def save_curves(self) -> Optional[Path]:
+        """Save live plots plus offline comparison metrics with one timestamp."""
         if self.trainer is None or self.last_snapshot is None:
             messagebox.showinfo("No curves", "Start or load training before saving curves.")
-            return
+            return None
         saved_at = datetime.now().astimezone()
         timestamp = saved_at.strftime("%Y%m%d-%H%M%S-%f")
         folder = (
@@ -573,12 +606,127 @@ class TrainingPanel:
                 bbox_inches="tight",
                 metadata={"Title": "Continual RL learning curves", "Creation Time": timestamp_label},
             )
-            self.status_var.set("Curves saved: %s" % path)
+            self._save_performance_exports(folder, timestamp, timestamp_label, self.last_snapshot)
+            self.status_var.set("Curves and performance metrics saved: %s" % folder)
         except Exception as exc:
             messagebox.showerror("Cannot save curves", str(exc))
+            return None
         finally:
             if annotation is not None:
                 annotation.remove()
+        return folder
+
+    def _save_performance_exports(
+        self, folder: Path, timestamp: str, timestamp_label: str, snapshot: Dict[str, Any]
+    ) -> None:
+        curves = snapshot["curves"]
+        events = list(snapshot.get("adaptation_events", []))
+        steps = curves["steps"]
+        figure = Figure(figsize=(12, 9), dpi=100)
+        axes = figure.subplots(3, 2)
+        plots = [
+            ("average_reward", "Rolling average reward", "reward"),
+            ("goal_count_window", "Goals reached in last W steps", "count"),
+            ("mean_inter_goal_time", "Mean inter-goal time", "steps"),
+            ("invalid_action_rate", "Invalid-action rate", "rate"),
+            ("average_reward_estimation_error", "Average-reward estimation error", "absolute error"),
+        ]
+        for axis, (key, title, ylabel) in zip(axes.flat[:5], plots):
+            axis.plot(steps, curves.get(key, []), label=title)
+            axis.set_title(title)
+            axis.set_xlabel("stream step")
+            axis.set_ylabel(ylabel)
+            axis.grid(alpha=0.25)
+        for record in events:
+            axes[0, 0].axvline(float(record["event_step"]), color="#d05a4e", alpha=0.25)
+
+        event_axis = axes[2, 1]
+        styles = {
+            "recovered": ("o", "#2b8c5a"),
+            "censored": ("x", "#d07b32"),
+            "pending": ("^", "#5078c8"),
+            "unavailable": ("s", "#777777"),
+        }
+        for status, (marker, color) in styles.items():
+            selected = [record for record in events if record["status"] == status]
+            if not selected:
+                continue
+            event_axis.scatter(
+                [record["event_step"] for record in selected],
+                [record["delay"] if record.get("delay") is not None else 0.0 for record in selected],
+                marker=marker,
+                color=color,
+                label=status,
+            )
+        event_axis.set_title("Adaptation delay by environment event")
+        event_axis.set_xlabel("event step")
+        event_axis.set_ylabel("delay (steps; 0 means unresolved)")
+        event_axis.grid(alpha=0.25)
+        if events:
+            event_axis.legend(fontsize=8)
+        figure.tight_layout(rect=(0, 0.025, 1, 1))
+        figure.text(0.995, 0.005, timestamp_label, ha="right", va="bottom", fontsize=7, color="#555")
+        figure.savefig(
+            folder / ("performance_metrics_%s.png" % timestamp),
+            dpi=150,
+            bbox_inches="tight",
+            metadata={"Title": "Continual RL performance metrics", "Creation Time": timestamp_label},
+        )
+
+        curve_keys = [key for key in curves if key != "steps"]
+        with (folder / ("performance_metrics_%s.csv" % timestamp)).open(
+            "w", newline="", encoding="utf-8"
+        ) as handle:
+            writer = csv.DictWriter(handle, fieldnames=["step"] + curve_keys)
+            writer.writeheader()
+            for index, step in enumerate(steps):
+                row = {"step": step}
+                row.update(
+                    {
+                        key: curves[key][index] if index < len(curves[key]) else float("nan")
+                        for key in curve_keys
+                    }
+                )
+                writer.writerow(row)
+
+        event_fields = [
+            "event_step", "events", "status", "baseline_reward",
+            "recovery_threshold", "end_step", "delay",
+        ]
+        with (folder / ("adaptation_events_%s.csv" % timestamp)).open(
+            "w", newline="", encoding="utf-8"
+        ) as handle:
+            writer = csv.DictWriter(handle, fieldnames=event_fields)
+            writer.writeheader()
+            for record in events:
+                row = {key: record.get(key) for key in event_fields}
+                row["events"] = "|".join(record.get("events", []))
+                writer.writerow(row)
+
+        excluded = {"curves", "policy_probabilities", "adaptation_events"}
+        summary = {key: value for key, value in snapshot.items() if key not in excluded}
+        summary.update(
+            {
+                "saved_at": timestamp_label.removeprefix("Saved at "),
+                "run_id": self.trainer.run_id,
+                "metric_window": self.trainer.config.training.metric_window,
+                "adaptation_events": events,
+            }
+        )
+        with (folder / ("performance_summary_%s.json" % timestamp)).open(
+            "w", encoding="utf-8"
+        ) as handle:
+            json.dump(self._json_safe(summary), handle, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def _json_safe(cls, value):
+        if isinstance(value, dict):
+            return {str(key): cls._json_safe(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [cls._json_safe(item) for item in value]
+        if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+            return None
+        return value
 
     def stop_training(self) -> None:
         self.stop_event.set()
@@ -607,6 +755,7 @@ class TrainingPanel:
 
     def _poll_messages(self) -> None:
         latest_snapshot = self._take_pending_snapshot()
+        completed_step = None
         try:
             # Process a bounded number of control messages so this callback always
             # returns to Tk's event loop even if a very fast algorithm is running.
@@ -619,6 +768,9 @@ class TrainingPanel:
                 elif kind == "stopped":
                     self.status_var.set("Stopped. Current training was not saved.")
                     self._set_idle_controls()
+                elif kind == "completed":
+                    completed_step = int(payload)
+                    self._set_idle_controls()
                 elif kind == "error":
                     exc, path = payload
                     self._set_idle_controls()
@@ -627,6 +779,18 @@ class TrainingPanel:
             pass
         if latest_snapshot is not None:
             self._render_snapshot(latest_snapshot)
+        if completed_step is not None:
+            folder = self.save_curves()
+            if folder is not None:
+                self.status_var.set(
+                    "Completed fixed run at step %d. Results auto-saved: %s"
+                    % (completed_step, folder)
+                )
+            else:
+                self.status_var.set(
+                    "Completed fixed run at step %d, but automatic result export failed."
+                    % completed_step
+                )
         self.root.after(100, self._poll_messages)
 
     def _set_idle_controls(self) -> None:
@@ -853,9 +1017,9 @@ class TrainingPanel:
         self.root.destroy()
 
 
-def main() -> None:
+def main(fixed_steps: int = 0) -> None:
     root = tk.Tk()
-    TrainingPanel(root)
+    TrainingPanel(root, fixed_steps=fixed_steps)
     root.mainloop()
 
 

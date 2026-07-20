@@ -112,11 +112,21 @@ class TrainingConfig:
     auto_checkpoint_steps: int = 10_000
     checkpoint_dir: str = "checkpoints"
     log_dir: str = "runs"
+    adaptation_recovery_ratio: float = 0.9
+    adaptation_recovery_window: int = 100
+    adaptation_sustain_steps: int = 100
+    adaptation_baseline_floor: float = 1.0
 
     def validate(self) -> None:
         for name in ("metric_window", "chart_points", "ui_update_steps", "auto_checkpoint_steps"):
             if getattr(self, name) <= 0:
                 raise ValueError("%s must be positive." % name)
+        if not 0.0 < self.adaptation_recovery_ratio <= 1.0:
+            raise ValueError("adaptation_recovery_ratio must lie in (0, 1].")
+        if self.adaptation_recovery_window <= 0 or self.adaptation_sustain_steps <= 0:
+            raise ValueError("Adaptation recovery window and sustain steps must be positive.")
+        if self.adaptation_baseline_floor <= 0.0:
+            raise ValueError("adaptation_baseline_floor must be positive.")
 
 
 @dataclass

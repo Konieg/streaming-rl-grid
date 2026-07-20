@@ -31,6 +31,10 @@ class Trainer:
             config.training.metric_window,
             config.training.chart_points,
             config.training.ui_update_steps,
+            recovery_ratio=config.training.adaptation_recovery_ratio,
+            recovery_window=config.training.adaptation_recovery_window,
+            recovery_sustain=config.training.adaptation_sustain_steps,
+            baseline_floor=config.training.adaptation_baseline_floor,
         )
         self.current_observation = self.environment.observation()
         self.current_action = self.agent.select_action(self.current_observation)
@@ -124,6 +128,7 @@ class Trainer:
                 "algorithm": self.config.agent.algorithm,
                 "policy_probabilities": policies,
                 "curves": self.metrics.curves(),
+                "adaptation_events": self.metrics.adaptation_events(),
                 "q_parameter_count": self.features.size,
                 "representation": "tabular-one-hot",
                 }
