@@ -6,7 +6,6 @@ from typing import Any, Dict, Iterable, Sequence, Tuple
 import numpy as np
 
 from ..config import AgentConfig
-from ..discrete_features import DiscreteStateActionFeatures
 
 
 StateKey = Tuple[int, int, int, int]
@@ -17,7 +16,7 @@ class BaseControlAgent(ABC):
 
     algorithm_name = "base"
 
-    def __init__(self, features: DiscreteStateActionFeatures, config: AgentConfig, seed: int = 0):
+    def __init__(self, features, config: AgentConfig, seed: int = 0):
         self.features = features
         self.config = config
         self.rng = np.random.default_rng(seed)
@@ -29,6 +28,11 @@ class BaseControlAgent(ABC):
         self.observation_counts: Dict[Tuple[int, int, int, int, int], int] = {}
         self.policy_probability_matrix = None
         self.policy_goal = None
+
+    @property
+    def initial_per_feature_step_size(self) -> float:
+        """Keep the aggregate initial update scale stable across representations."""
+        return self.config.effective_initial_step / float(self.features.nominal_active_count)
 
     @property
     def epsilon(self) -> float:

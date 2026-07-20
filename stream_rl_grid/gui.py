@@ -15,7 +15,10 @@ from tkinter import filedialog, messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-from .config import ALGORITHMS, AgentConfig, AppConfig, EnvironmentConfig, PROFILES, TrainingConfig, WIND_CHOICES
+from .config import (
+    ALGORITHMS, REPRESENTATIONS, AgentConfig, AppConfig, EnvironmentConfig,
+    PROFILES, TrainingConfig, WIND_CHOICES,
+)
 from .environment import ContinualWindyGridWorld
 from .trainer import Trainer
 
@@ -102,18 +105,19 @@ class TrainingPanel:
         ttk.Button(preview_row, text="Next map", command=lambda: self._change_preview_context(1)).pack(side=tk.LEFT)
 
         self._add_combo(agent_tab, "Algorithm", "algorithm", ALGORITHMS, 0)
-        self._add_entry(agent_tab, "Lambda", "lambda_", 1)
-        self._add_entry(agent_tab, "Fixed epsilon", "epsilon", 2)
-        self._add_entry(agent_tab, "TIDBD theta", "theta", 3)
-        self._add_entry(agent_tab, "Initial step size", "effective_initial_step", 4)
-        self._add_entry(agent_tab, "Reward-rate step", "reward_rate_step", 5)
-        self._add_entry(agent_tab, "Beta minimum", "beta_min", 6)
-        self._add_entry(agent_tab, "Beta maximum", "beta_max", 7)
-        self._add_entry(agent_tab, "Adaptive epsilon kappa", "adaptive_epsilon_kappa", 8)
-        self._add_entry(agent_tab, "Adaptive epsilon minimum", "adaptive_epsilon_min", 9)
-        self._add_entry(agent_tab, "Adaptive epsilon maximum", "adaptive_epsilon_max", 10)
-        self._add_entry(agent_tab, "Adaptive epsilon scale c", "adaptive_epsilon_scale", 11)
-        self._add_entry(agent_tab, "Adaptive epsilon u_ref", "adaptive_epsilon_u_ref", 12)
+        self._add_combo(agent_tab, "Value representation", "representation", REPRESENTATIONS, 1)
+        self._add_entry(agent_tab, "Lambda", "lambda_", 2)
+        self._add_entry(agent_tab, "Fixed epsilon", "epsilon", 3)
+        self._add_entry(agent_tab, "TIDBD theta", "theta", 4)
+        self._add_entry(agent_tab, "Initial effective step size", "effective_initial_step", 5)
+        self._add_entry(agent_tab, "Reward-rate step", "reward_rate_step", 6)
+        self._add_entry(agent_tab, "Beta minimum", "beta_min", 7)
+        self._add_entry(agent_tab, "Beta maximum", "beta_max", 8)
+        self._add_entry(agent_tab, "Adaptive epsilon kappa", "adaptive_epsilon_kappa", 9)
+        self._add_entry(agent_tab, "Adaptive epsilon minimum", "adaptive_epsilon_min", 10)
+        self._add_entry(agent_tab, "Adaptive epsilon maximum", "adaptive_epsilon_max", 11)
+        self._add_entry(agent_tab, "Adaptive epsilon scale c", "adaptive_epsilon_scale", 12)
+        self._add_entry(agent_tab, "Adaptive epsilon u_ref", "adaptive_epsilon_u_ref", 13)
 
         self._add_entry(run_tab, "Metric window", "metric_window", 0)
         self._add_entry(run_tab, "Chart points", "chart_points", 1)
@@ -171,7 +175,7 @@ class TrainingPanel:
             ("abs_td_error", "Mean |TD error|"),
             ("epsilon", "Current epsilon"), ("td_error_magnitude", "Smoothed |TD error|"),
             ("alpha_mean", "Mean step size"), ("alpha_max", "Max step size"),
-            ("q_parameter_count", "Q-table parameters"),
+            ("q_parameter_count", "Value parameters"), ("representation", "Representation"),
             ("context_index", "Hidden context (log)"), ("wind_phase", "Wind phase (log)"),
             ("algorithm", "Algorithm"), ("next_action", "Next action"),
         ]
@@ -293,6 +297,7 @@ class TrainingPanel:
             env.context_maps = [[list(point) for point in obstacles] for _ in range(expected_maps)]
         agent = AgentConfig(
             algorithm=self.variables["algorithm"].get(),
+            representation=self.variables["representation"].get(),
             lambda_=float(self.variables["lambda_"].get()),
             epsilon=float(self.variables["epsilon"].get()), theta=float(self.variables["theta"].get()),
             effective_initial_step=float(self.variables["effective_initial_step"].get()),

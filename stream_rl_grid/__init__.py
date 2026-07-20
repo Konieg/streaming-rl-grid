@@ -2,6 +2,7 @@
 
 from .config import AgentConfig, AppConfig, EnvironmentConfig, TrainingConfig
 from .environment import ACTION_NAMES, ACTIONS, NO_ACTION, ContinualWindyGridWorld
+from .factorized_features import SparseFactorizedStateActionFeatures
 from .trainer import Trainer
 
 __all__ = [
@@ -12,6 +13,7 @@ __all__ = [
     "AppConfig",
     "ContinualWindyGridWorld",
     "EnvironmentConfig",
+    "SparseFactorizedStateActionFeatures",
     "TrainingConfig",
     "Trainer",
 ]

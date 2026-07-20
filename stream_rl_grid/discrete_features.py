@@ -17,6 +17,7 @@ class DiscreteStateActionFeatures:
 
     action_count = 5
     previous_action_count = action_count + 1
+    representation_name = "tabular-one-hot"
 
     def __init__(self, env_config: EnvironmentConfig):
         self.width = int(env_config.width)
@@ -56,7 +57,7 @@ class DiscreteStateActionFeatures:
 
     def state_dict(self) -> Dict[str, Any]:
         return {
-            "representation": "tabular-one-hot",
+            "representation": self.representation_name,
             "width": self.width,
             "height": self.height,
             "action_count": self.action_count,

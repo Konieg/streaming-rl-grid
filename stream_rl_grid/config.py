@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 PROFILES = ("stationary", "seasonal_wind", "moving_goal", "hidden_context", "combined", "customize")
 WIND_CHOICES = ("auto", "up", "right", "down", "left", "none")
 ALGORITHMS = ("tidbd", "sarsa", "true_online_sarsa", "adaptive_epsilon_sarsa")
+REPRESENTATIONS = ("tabular-one-hot", "sparse-factorized")
 
 
 @dataclass
@@ -69,6 +70,7 @@ class EnvironmentConfig:
 @dataclass
 class AgentConfig:
     algorithm: str = "tidbd"
+    representation: str = "tabular-one-hot"
     lambda_: float = 0.8
     epsilon: float = 0.1
     theta: float = 0.01
@@ -86,6 +88,8 @@ class AgentConfig:
     def validate(self) -> None:
         if self.algorithm not in ALGORITHMS:
             raise ValueError("Unknown training algorithm: %s" % self.algorithm)
+        if self.representation not in REPRESENTATIONS:
+            raise ValueError("Unknown value representation: %s" % self.representation)
         if not 0.0 <= self.lambda_ <= 1.0:
             raise ValueError("lambda must lie in [0, 1].")
         if not 0.0 <= self.epsilon <= 1.0:

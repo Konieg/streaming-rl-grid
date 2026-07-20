@@ -14,7 +14,7 @@ class DifferentialSarsa(BaseControlAgent):
         config.validate()
         super().__init__(features, config, seed)
         self.trace = np.zeros(features.size, dtype=np.float64)
-        self.alpha = config.effective_initial_step
+        self.alpha = self.initial_per_feature_step_size
 
     def update(self, observation, action, reward, next_observation, next_action) -> float:
         active = self.features.active(observation, action)
@@ -50,4 +50,4 @@ class DifferentialSarsa(BaseControlAgent):
         if trace.shape != (self.features.size,):
             raise ValueError("Checkpoint trace has an incompatible shape.")
         self.trace = trace.copy()
-        self.alpha = float(state.get("alpha", self.config.effective_initial_step))
+        self.alpha = float(state.get("alpha", self.initial_per_feature_step_size))

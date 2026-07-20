@@ -9,11 +9,14 @@ from typing import Dict, List
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .config import AppConfig, PROFILES
+from .config import REPRESENTATIONS, AppConfig, PROFILES
 from .trainer import Trainer
 
 
-def run_benchmark(profiles: List[str], seeds: List[int], steps: int, output: Path) -> Path:
+def run_benchmark(
+    profiles: List[str], seeds: List[int], steps: int, output: Path,
+    representation: str = "tabular-one-hot",
+) -> Path:
     output.mkdir(parents=True, exist_ok=True)
     rows: List[Dict[str, float]] = []
     curves = {}
@@ -26,6 +29,7 @@ def run_benchmark(profiles: List[str], seeds: List[int], steps: int, output: Pat
                 config.environment.profile = profile
                 config.environment.seed = seed
                 config.agent.algorithm = algorithm
+                config.agent.representation = representation
                 config.agent.use_tidbd = algorithm == "tidbd"
                 config.training.auto_checkpoint_steps = steps + 1
                 trainer = Trainer(config, base_dir=output)
@@ -34,6 +38,7 @@ def run_benchmark(profiles: List[str], seeds: List[int], steps: int, output: Pat
                     {
                         "profile": profile,
                         "method": label,
+                        "representation": representation,
                         "seed": seed,
                         "steps": steps,
                         "average_reward": snapshot["average_reward"],
@@ -80,11 +85,14 @@ def main() -> None:
     parser.add_argument("--profiles", nargs="+", choices=PROFILES, default=list(PROFILES))
     parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
     parser.add_argument("--steps", type=int, default=50_000)
+    parser.add_argument("--representation", choices=REPRESENTATIONS, default="tabular-one-hot")
     parser.add_argument("--output", type=str)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     output = Path(args.output) if args.output else root / "benchmark_results" / datetime.now().strftime("%Y%m%d-%H%M%S")
-    csv_path = run_benchmark(args.profiles, args.seeds, args.steps, output.resolve())
+    csv_path = run_benchmark(
+        args.profiles, args.seeds, args.steps, output.resolve(), representation=args.representation
+    )
     print("Benchmark written to %s" % csv_path.parent)
 
 

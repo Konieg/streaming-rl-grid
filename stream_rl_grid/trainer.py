@@ -12,8 +12,8 @@ import numpy as np
 from .algo import create_agent
 from .checkpoint import load_checkpoint, save_checkpoint
 from .config import AppConfig
-from .discrete_features import DiscreteStateActionFeatures
 from .environment import ACTION_NAMES, ContinualWindyGridWorld
+from .features import create_features
 from .metrics import MetricsTracker
 
 
@@ -25,7 +25,7 @@ class Trainer:
         self.base_dir = Path(base_dir or Path.cwd()).resolve()
         self.run_id = run_id or datetime.now().strftime("%Y%m%d-%H%M%S")
         self.environment = ContinualWindyGridWorld(config.environment)
-        self.features = DiscreteStateActionFeatures(config.environment)
+        self.features = create_features(config.environment, config.agent)
         self.agent = create_agent(self.features, config.agent, seed=config.environment.seed + 1)
         self.metrics = MetricsTracker(
             config.training.metric_window,
@@ -130,7 +130,7 @@ class Trainer:
                 "curves": self.metrics.curves(),
                 "adaptation_events": self.metrics.adaptation_events(),
                 "q_parameter_count": self.features.size,
-                "representation": "tabular-one-hot",
+                "representation": self.features.representation_name,
                 }
             )
             return summary
@@ -199,8 +199,6 @@ class Trainer:
     @classmethod
     def from_checkpoint(cls, path: Union[str, Path], base_dir: Optional[Union[str, Path]] = None) -> "Trainer":
         state = load_checkpoint(path)
-        if state.get("compatibility", {}).get("representation") != "tabular-one-hot":
-            raise ValueError("Checkpoint uses an incompatible state-action representation.")
         config = AppConfig.from_dict(state["config"])
         trainer = cls(config, base_dir=base_dir, run_id=state["run_id"])
         saved_compatibility = dict(state.get("compatibility", {}))
@@ -225,7 +223,7 @@ class Trainer:
             "height": self.config.environment.height,
             "actions": list(ACTION_NAMES),
             "algorithm": self.config.agent.algorithm,
-            "representation": "tabular-one-hot",
+            "representation": self.features.representation_name,
             "observation_fields": ["x", "y", "goal_x", "goal_y", "previous_action"],
         }
 

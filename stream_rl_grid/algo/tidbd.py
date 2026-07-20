@@ -13,7 +13,7 @@ class DifferentialSarsaTIDBD(BaseControlAgent):
     def __init__(self, features, config, seed: int = 0):
         config.validate()
         super().__init__(features, config, seed)
-        initial_alpha = config.effective_initial_step
+        initial_alpha = self.initial_per_feature_step_size
         self.beta = np.full(features.size, np.log(initial_alpha), dtype=np.float64)
         self.h = np.zeros(features.size, dtype=np.float64)
         self.trace = np.zeros(features.size, dtype=np.float64)
