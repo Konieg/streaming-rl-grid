@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from stream_rl_grid.metrics import MetricsTracker
+from stream_rl_grid.environment import ContinualWindyGridWorld
 from stream_rl_grid.phase1_plot import _event_steps, _selection_eligible
 from stream_rl_grid.phase1_sweep import (
     METHOD_LABELS, _app_config, build_jobs, make_manifest, parameter_configurations,
@@ -103,6 +104,7 @@ class PhaseOneExperimentTests(unittest.TestCase):
         for job in build_jobs(manifest):
             config = _app_config(manifest, job)
             config.validate()
+            ContinualWindyGridWorld(config.environment)
             if job["parameters"]["method"] == "dyna_q_plus":
                 self.assertEqual(config.agent.algorithm, "dyna_q_plus")
                 self.assertEqual(

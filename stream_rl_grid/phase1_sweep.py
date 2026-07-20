@@ -256,7 +256,11 @@ def build_jobs(manifest: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _app_config(manifest: Dict[str, Any], job: Dict[str, Any]) -> AppConfig:
     seed = int(job["seed"])
     setting = manifest["settings"][job["setting"]]
-    seed_data = manifest["seed_manifests"][str(seed)]
+    setting_seed_manifests = manifest.get("setting_seed_manifests", {})
+    seed_manifest = setting_seed_manifests.get(
+        job["setting"], manifest["seed_manifests"]
+    )
+    seed_data = seed_manifest[str(seed)]
     schedule = manifest["schedule"]
     maps = seed_data["context_maps"]
     environment = EnvironmentConfig(

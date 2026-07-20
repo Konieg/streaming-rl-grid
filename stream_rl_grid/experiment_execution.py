@@ -23,6 +23,27 @@ def load_or_create_manifest(output: Path, requested: Dict[str, Any]) -> Dict[str
                 "Existing experiment_manifest.json differs from this protocol; "
                 "choose a different --output directory."
             )
+        # These fields are additive protocol metadata. In particular,
+        # setting_seed_manifests can safely repair a setting whose jobs never
+        # passed environment construction, without invalidating completed jobs
+        # from other settings in the same output directory.
+        changed = False
+        for key in (
+            "setting_seed_manifests", "method_order", "method_labels",
+            "winner_source_setting", "source_selected_configs",
+        ):
+            if key not in requested:
+                continue
+            if key in existing and existing[key] != requested[key]:
+                raise ValueError(
+                    "Existing experiment manifest has incompatible %s metadata; "
+                    "choose a different --output directory." % key
+                )
+            if key not in existing:
+                existing[key] = requested[key]
+                changed = True
+        if changed:
+            _atomic_json(path, existing)
         return existing
     _atomic_json(path, requested)
     return requested

@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import os
+from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -95,6 +96,61 @@ def _configuration_index(manifest: Dict[str, Any]) -> Dict[Tuple[str, str], Dict
     }
 
 
+def _free_cells_connected(width: int, height: int, obstacles) -> bool:
+    blocked = {tuple(point) for point in obstacles}
+    free = {(x, y) for y in range(height) for x in range(width)} - blocked
+    if not free:
+        return False
+    start = next(iter(free))
+    seen = {start}
+    queue = deque([start])
+    while queue:
+        x, y = queue.popleft()
+        for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+            candidate = (x + dx, y + dy)
+            if candidate in free and candidate not in seen:
+                seen.add(candidate)
+                queue.append(candidate)
+    return seen == free
+
+
+def _obstacle_only_seed_manifests(source: Dict[str, Any]) -> Dict[str, Any]:
+    """Repair only maps that cover the fixed goal, preserving all other maps."""
+    width = int(source["environment"]["width"])
+    height = int(source["environment"]["height"])
+    result = {}
+    for seed, raw_seed_data in source["seed_manifests"].items():
+        seed_data = dict(raw_seed_data)
+        goal = tuple(int(value) for value in seed_data["goal_position"])
+        repaired_maps = []
+        for raw_layout in seed_data["context_maps"]:
+            layout = {tuple(int(value) for value in point) for point in raw_layout}
+            if goal in layout:
+                without_goal = layout - {goal}
+                replacement = None
+                for y in range(height):
+                    for x in range(width):
+                        point = (x, y)
+                        candidate = without_goal | {point}
+                        if point != goal and point not in without_goal and _free_cells_connected(
+                            width, height, candidate
+                        ):
+                            replacement = candidate
+                            break
+                    if replacement is not None:
+                        break
+                if replacement is None:
+                    raise ValueError(
+                        "Could not repair obstacle map for seed %s without covering goal %r."
+                        % (seed, goal)
+                    )
+                layout = replacement
+            repaired_maps.append([list(point) for point in sorted(layout)])
+        seed_data["context_maps"] = repaired_maps
+        result[str(seed)] = seed_data
+    return result
+
+
 def selected_parameter_configurations(
     phase1_manifest: Dict[str, Any],
     phase1_selected: Path,
@@ -157,6 +213,9 @@ def make_manifest(
         "settings": SETTINGS,
         "parameter_configurations": parameters,
         "seed_manifests": phase1_manifest["seed_manifests"],
+        "setting_seed_manifests": {
+            "obstacles_only": _obstacle_only_seed_manifests(phase1_manifest),
+        },
         "method_order": list(METHOD_ORDER),
         "method_labels": METHOD_LABELS_8,
         "winner_source_setting": WINNER_SOURCE_SETTING,
