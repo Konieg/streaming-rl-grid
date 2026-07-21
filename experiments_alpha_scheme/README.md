@@ -144,25 +144,6 @@ LFA action-value 为：
 Q_w(s,a)=w^\top\phi(s,a),\qquad w\in\mathbb R^{55}
 \]
 
-### 后续 feature-selection 扩展：nuisance group
-
-Phase 0–2 **先只使用 D=55**。在 Phase 3 才增加预先定义的 nuisance group：每步采样一个
-与环境、动作、reward 和 context 独立的随机类别 \(u_t\in\{0,\ldots,15\}\)，并编码成 16 维
-one-hot 特征。它是人为提供给 learner 的已知无关输入，用来检验“per-feature alpha 是否会
-压低无关 feature 的更新”。
-
-加入后：
-
-\[
-\phi_{\mathrm{selection}}(s,a,u_t)=
-\frac{1}{\sqrt 2}[\phi(s,a),\operatorname{onehot}(u_t)]
-\in\mathbb R^{71}
-\]
-
-系数 \(1/\sqrt2\) 使扩展后的向量仍满足 \(\lVert\phi_{\mathrm{selection}}\rVert_2=1\)，避免把
-feature 数量造成的整体尺度变化误认为 step-size 效应。该扩展不改变环境、不比较另一种 feature
-design；它只向固定 pool 加入已知无关的候选特征。
-
 ### 学习变量与边界
 
 所有 Phase 使用 \(\lambda=0\)，即无 eligibility trace。
@@ -405,66 +386,3 @@ epsilon-greedy policy。Phase 2 相比 Phase 1 只增加 policy-induced distribu
 - **预期与判定**：若 TIDBD 同时改善 adaptation 和 A probe / A recurrence，且没有通过显著提高
   碰撞率或降低探索来“伪改善”平均 reward，则可把它作为 continual-control 候选机制。若只提升
   当前 B 模式 reward 而 A probe 恶化，则其作用是更快 tracking，不是保留记忆。
-
-## Phase 3 — D=71 feature-selection 因果检验
-
-在 Phase 1–2 的机制结论稳定后，加入固定 16 维 nuisance group，训练 per-feature TIDBD。
-冻结训练完成的权重和 alpha，不再学习，分别删除：
-
-- nuisance group；
-- 低 / 中 / 高 alpha 分位的 feature。
-
-在 stationary、变化后与 A/B recurrence probes 上评价。只有删除后所有预注册指标基本不变，
-才能称 feature 冗余；小 alpha 本身不等于无用。
-
-### 目的
-
-把“某 feature 的 alpha 小”从相关现象提升为可检验的 feature-selection 主张。由于 16 维
-nuisance 的生成过程已知且与任务独立，它提供了一个受控的负例；Phase 3 仍不比较 feature
-engineering。
-
-### P3.1：nuisance 对适应和 alpha 的影响
-
-- **设置**：在 P1.2/P2.2 中确实观察到 TIDBD 机制信号的代表性环境上，将 D=55 扩展为 D=71。
-  比较 D=55 fixed alpha、D=71 fixed alpha 与 D=71 TIDBD；每步的 \(u_t\) 必须由独立随机流产生，
-  并在算法之间配对。
-- **主要观测量**：主 feature 与 nuisance group 的 alpha、累计更新量和权重范数分布；以及相同的
-  prediction/control、adaptation、A probe 和 recurrence 指标。
-- **预期与判定**：一个有意义的选择信号应表现为：TIDBD 下 nuisance group 的累计更新量和典型
-  alpha 系统性低于相关的 55 维主 group，同时 D=71 的表现不显著劣于 D=55。若 nuisance alpha
-  未下降但表现仍好，说明算法可能只是鲁棒而非在筛选；若下降却表现恶化，说明压低步长也可能错误地
-  关闭有用容量。
-
-### P3.2：冻结后的消融检验
-
-- **设置**：训练结束后冻结 \(w,\alpha,\bar r\) 与策略；不再更新。分别将 nuisance group 置零，
-  并按 alpha 分位数删除低、中、高 alpha 的 feature（删除数量预先相同、删除规则跨 seed 固定）。
-  在 stationary、刚切换后和 A→B→A probe 上重放固定评估 stream。
-- **主要观测量**：相对于未消融模型的 prediction error、平均 reward、goal rate、AUEC 与 A probe
-  差值，并报告置信区间。
-- **预期与判定**：若删除 nuisance 或低-alpha 组的所有预注册指标都在等价界内（等价界须在运行前按
-  Phase 0 方差设定），而删除中/高-alpha 组产生明确性能下降，才支持“per-feature alpha 是可用的
-  feature-importance / selection 信号”。若低-alpha 组删除也损害性能，则 alpha 不能被解释为可安全
-  剪枝的选择信号。
-
-## 实施顺序
-
-环境审计已经完成。以下是后续 agent 应遵循的主线；不再执行 pilot、\(\theta\)/\(\eta_{\bar r}\) 调参、
-特征维度 sweep、nuisance 消融或 `combined` 环境测试。除明确比较的 alpha 机制外，所有设定直接采用
-上文固定值：\(D=55\)、\(\lambda=0\)、\(\eta_{\bar r}=0.01\)、\(\epsilon\) 与既定的评价窗口/统计协议。
-
-1. **先实现并运行 Phase 0（tabular 对照）。** 对每个环境条件分别运行 P0.1 固定策略 prediction 与
-   P0.2 epsilon-greedy control；每项只比较 fixed scalar alpha 与 per-table-entry adaptive alpha。
-   输出共同指标：TD-error、切换后的恢复/AUEC、A probe retention，以及 control 的 reward 与 goal rate。
-   这一步确认环境变化本身能产生 adaptation、interference 和 recurrence 现象，并给出无参数共享的基线。
-2. **在完全相同协议下完成 Phase 1（D=55 prediction）。** 复用 Phase 0 的环境种子、切换时刻、
-   行为策略、alpha 候选值和固定评估 stream；仅把 tabular one-hot 表换为 D=55 LFA，运行 P1.1 fixed
-   alpha 与 P1.2 per-feature TIDBD。与 Phase 0 配对比较，以分离 parameter sharing 对 step-size 取舍的影响。
-3. **再完成 Phase 2（D=55 control）。** 不改 feature、环境、alpha 机制或指标，只把固定行为策略换为
-   Sarsa(0) 的 epsilon-greedy control，运行 P2.1 fixed alpha 与 P2.2 per-feature TIDBD。对照 Phase 1，
-   判断 prediction 中的规律在策略和访问分布随学习改变时是否仍成立。
-4. **按同一表格汇总主结论。** 每个 Phase × 环境 × alpha 机制均报告同一组 adaptation、retention 与
-   steady-state 指标及跨 seed 统计；只在 stationary、seasonal wind、hidden context、moving goal 的结果上
-   下结论。结论必须同时说明其适用的 prediction/control 情形，以及相对 tabular 基线的变化。
-5. **Phase 3 留作条件性后续工作。** 它只在 Phase 1/2 已稳定观察到 per-feature alpha 差异后启动，
-   用于检验 alpha 能否作为 feature-selection 信号；不属于当前主实验、不得阻塞 Phase 0–2 的实现与分析。
