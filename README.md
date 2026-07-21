@@ -2,11 +2,7 @@
 
 [![en](https://img.shields.io/badge/lang-English-blue.svg)](#english)[![中文](https://img.shields.io/badge/lang-简体中文-brown.svg)](README_zh-CN.md)
 
-<<<<<<< HEAD
 A Windy Grid World designed for continual learning experiments. Each transition is used only once, with no replay buffer, no batches, and no episode termination. The agent uses:
-=======
-**Streaming Differential Sarsa(λ) + replacing traces + 两组feature representation (tile coding and polynomials) + TIDBD**。
->>>>>>> aaee18a9c54871d4318e60b31bb4fe9bad1f0983
 
 **Streaming Differential Sarsa(λ) + replacing traces + dual-group tile coding + TIDBD**.
 
@@ -31,13 +27,7 @@ The average-reward estimate is updated as:
 
 $$\bar{R} \gets \bar{R} + \eta \delta$$
 
-<<<<<<< HEAD
 The eligibility trace uses replacing traces:
-=======
-$$ R_bar = R_bar + eta * delta $$
-
-资格迹采用 replacing traces：
->>>>>>> aaee18a9c54871d4318e60b31bb4fe9bad1f0983
 
 $$
 z \gets \lambda z
