@@ -30,7 +30,7 @@ $$\bar{R} \gets \bar{R} + \eta \delta$$
 The eligibility trace uses replacing traces:
 
 $$
-z \gets \lambda z
+z \gets \lambda z \\
 z_{\text{active}} \gets 1
 $$
 
