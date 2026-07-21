@@ -29,6 +29,7 @@ class EnvironmentTests(unittest.TestCase):
         self.assertFalse(terminated)
         self.assertFalse(truncated)
         self.assertNotEqual(env.agent_state, env.goal)
+        self.assertEqual(env.start_position, env.agent_state)
         self.assertEqual(observation[:4], env.observation()[:4])
 
     def test_goal_restart_is_random_legal_and_profile_independent(self):

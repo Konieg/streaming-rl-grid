@@ -71,7 +71,7 @@ class IncrementalGridDrawingTests(unittest.TestCase):
         return panel
 
     @staticmethod
-    def snapshot(agent_state):
+    def snapshot(agent_state, start_position=(0, 0)):
         probabilities = [0.02, 0.92, 0.02, 0.02, 0.02]
         return {
             "obstacles": [],
@@ -81,7 +81,7 @@ class IncrementalGridDrawingTests(unittest.TestCase):
                 [list(probabilities), list(probabilities)],
                 [list(probabilities), list(probabilities)],
             ],
-            "start_position": (0, 0),
+            "start_position": start_position,
             "goal": (1, 1),
             "agent_state": agent_state,
             "wind": (0, 0),
@@ -110,6 +110,23 @@ class IncrementalGridDrawingTests(unittest.TestCase):
         self.assertTrue(
             cell_items.isdisjoint(panel.grid_canvas.configuration_updates[configuration_update_count:])
         )
+
+    def test_start_overlay_moves_to_latest_restart_position(self):
+        panel = self.panel()
+        panel._draw_grid(self.snapshot((0, 0), start_position=(0, 0)), 2, 2)
+        create_count = len(panel.grid_canvas.created)
+        start_box = panel._grid_overlays["start_box"]
+        start_label = panel._grid_overlays["start_label"]
+        first_box_coordinates = panel.grid_canvas.coordinates[start_box]
+        first_label_coordinates = panel.grid_canvas.coordinates[start_label]
+
+        panel._draw_grid(self.snapshot((1, 0), start_position=(1, 0)), 2, 2)
+
+        self.assertEqual(len(panel.grid_canvas.created), create_count)
+        self.assertNotEqual(panel.grid_canvas.coordinates[start_box], first_box_coordinates)
+        self.assertNotEqual(panel.grid_canvas.coordinates[start_label], first_label_coordinates)
+        self.assertEqual(panel.grid_canvas.configuration[start_box]["state"], "normal")
+        self.assertEqual(panel.grid_canvas.configuration[start_label]["text"], "S")
 
 
 if __name__ == "__main__":
