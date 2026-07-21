@@ -11,7 +11,7 @@ This project draws on:
 - the per-sample online updates and eligibility-trace ideas from `Streaming Deep Reinforcement Learning Finally Works`;
 - the per-feature step-size adaptation method from `TIDBD: Adapting Temporal-difference Step-sizes Through Stochastic Meta-descent`.
 
-![GUI](D:\Continual Learning\streaming-rl-grid\GUI.png)
+![GUI](./GUI.png)
 
 ## Algorithm
 

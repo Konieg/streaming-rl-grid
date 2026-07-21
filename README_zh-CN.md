@@ -11,7 +11,7 @@
 - `Streaming Deep Reinforcement Learning Finally Works` 中的逐样本即时更新与资格迹思想；
 - `TIDBD: Adapting Temporal-difference Step-sizes Through Stochastic Meta-descent` 的逐特征步长更新；
 
-![GUI](D:\Continual Learning\streaming-rl-grid\GUI.png)
+![GUI](./GUI.png)
 
 ## 算法
 
