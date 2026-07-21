@@ -1,174 +1,160 @@
 # stream-rl-grid
 
-一个面向持续学习实验的 Windy Grid World：每个转移只使用一次、没有 replay buffer、没有 batch、没有 episode 终止。智能体采用：
+[![en](https://img.shields.io/badge/lang-English-blue.svg)](#english)[![中文](https://img.shields.io/badge/lang-简体中文-brown.svg)](README_zh-CN.md)
 
-**Streaming Differential Sarsa(λ) + replacing traces + 双组 tile coding + TIDBD**。
+A Windy Grid World designed for continual learning experiments. Each transition is used only once, with no replay buffer, no batches, and no episode termination. The agent uses:
 
-项目参考了：
+**Streaming Differential Sarsa(λ) + replacing traces + dual-group tile coding + TIDBD**.
 
-- `Streaming Deep Reinforcement Learning Finally Works` 中的逐样本即时更新与资格迹思想；
-- `TIDBD: Adapting Temporal-difference Step-sizes Through Stochastic Meta-descent` 的逐特征步长更新；
-- RLSS Lecture 02 的线性函数逼近和 tile coding；
-- RLSS Lecture 03 的 continuing average-reward / differential TD 更新。
+This project draws on:
 
-## 算法
+- the per-sample online updates and eligibility-trace ideas from `Streaming Deep Reinforcement Learning Finally Works`;
+- the per-feature step-size adaptation method from `TIDBD: Adapting Temporal-difference Step-sizes Through Stochastic Meta-descent`.
 
-动作值函数是线性的：
+![GUI](D:\Continual Learning\streaming-rl-grid\GUI.png)
+
+## Algorithm
+
+The action-value function is linear:
 
 $$Q(s, a) = w^T x(s, a)$$
 
+The Differential Sarsa TD error does not include a discount factor:
 
-差分 Sarsa TD error 不包含折扣因子：
+$$\delta = r + Q(s', a') - Q(s, a) - \bar{R}$$
 
-$$delta = reward - R_bar + Q(next_state, next_action) - Q(state, action)$$
+The average-reward estimate is updated as:
 
-平均奖励估计为：
+$$\bar{R} \gets \bar{R} + \eta \delta$$
 
-$$ R_bar <- R_bar + eta * delta $$
-
-资格迹采用 replacing traces：
-
-$$
-z <- lambda * z
-z[active_features] <- 1
-$$
-
-TIDBD 为每个权重维护 $`$beta_i = log(alpha_i)$`$ 和元迹 $H_i$：
+The eligibility trace uses replacing traces:
 
 $$
-beta_i <- beta_i + theta * delta * x_i * H_i
-alpha_i <- exp(beta_i)
-w_i <- w_i + alpha_i * delta * z_i
-H_i <- H_i * max(0, 1 - alpha_i * x_i * z_i) + alpha_i * delta * z_i
+z \gets \lambda z
+z_{\text{active}} \gets 1
 $$
 
-实现不叠加 ObGD，以免改变 TIDBD 实验含义；只设置宽松的 `beta` 数值边界并检测 NaN/Inf。
-
-## 状态与函数逼近
-
-智能体可观察：
+For each weight, TIDBD maintains $\beta_i = \log \alpha_i$ and the meta-trace $H_i$:
 
 $$
-(current_x, current_y, goal_x, goal_y, previous_action)
+\beta_i \gets \beta_i + \theta \delta x_i H_i \\
+\alpha_i \gets \exp(\beta_i) \\
+w_i \gets w_i + \alpha_i \delta z_i \\
+H_i \gets H_i \max(0, 1 - \alpha_i x_i z_i) + \alpha_i \delta z_i
 $$
 
-它看不到风阶段、奖励阶段、地图模式编号或全局时钟。
+ObGD is intentionally not combined with the implementation, because doing so would alter the experimental interpretation of TIDBD. Only loose numerical bounds on `beta` are imposed, together with NaN/Inf detection.
 
-双组 tile coding 分别编码：
+## State and Function Approximation
 
-1. 绝对位置 `(x, y, previous_action, candidate_action)`；
-2. 相对目标位置 `(goal_x-x, goal_y-y, previous_action, candidate_action)`。
+The agent observes:
 
-另有一个 categorical bias feature。默认每组 8 个 tilings，因此正常情况下每次有 17 个激活特征。
+$$
+(current_x, current_y, goal_x, goal_y, previous\_action)
+$$
 
-## Continuing 环境规则
+It cannot observe the wind phase, reward phase, map-mode identifier, or global clock.
 
-- 动作包括上、右、下、左、原地停留；
-- `stay` 仍然受到风的影响；
-- 主动动作和风的位移逐格执行；
-- 任一步碰到边界或障碍物，整个转移取消，智能体留在动作前的位置并得到碰撞惩罚；
-- 到达目标后得到目标奖励，并立即随机传送到合法非目标格；
-- 环境始终返回 `terminated=False, truncated=False`；
-- 到达目标、风季节变化、目标移动和地图切换均不清空资格迹；
-- 地图切换时，如果智能体当前格在新地图中是障碍物，该障碍物暂不激活；智能体离开后立即激活。
+Two groups of tile codings encode:
 
-## Structured non-stationarity
+1. the absolute position `(x, y, previous_action, candidate_action)`;
+2. the position relative to the goal `(goal_x-x, goal_y-y, previous_action, candidate_action)`.
 
-图形面板提供五种配置：
+An additional categorical bias feature is included. By default, each group uses 8 tilings, resulting in 17 active features per step under normal conditions.
 
-- `stationary`：固定风、目标、奖励和地图；
-- `seasonal_wind`：风向与奖励倍率按固定周期循环；
-- `moving_goal`：目标沿固定蛇形轨迹缓慢往返，遇到障碍物轨迹点则跳过；
-- `hidden_context`：障碍物地图按周期切换，但模式编号不提供给智能体；
-- `combined`：同时启用上述三类变化。
+## Continuing-Environment Rules
 
-地图生成器保证所有合法格连通。面板中可以先点击一个障碍物，再点击一个空格来移动障碍物；破坏连通性的修改会被拒绝。
+- The available actions are up, right, down, left, and stay;
+- the `stay` action is still affected by wind;
+- the displacement caused by the selected action and by the wind is executed one grid cell at a time;
+- if any intermediate step hits a boundary or obstacle, the entire transition is cancelled, the agent remains at its pre-action position, and a collision penalty is issued;
+- after reaching the goal, the agent receives the goal reward and is immediately teleported to a randomly selected valid non-goal cell;
+- the environment always returns `terminated=False, truncated=False`;
+- eligibility traces are not cleared when the goal is reached, the wind season changes, the goal moves, or the map switches;
+- when the map switches, if the agent's current cell is an obstacle in the new map, that obstacle remains temporarily inactive and is activated immediately after the agent leaves the cell.
 
-## 启动图形面板
+## Structured Non-Stationarity
 
-Python 需要带 Tk 支持。安装依赖后，在仓库根目录执行：
+The graphical interface provides five configurations:
+
+- `stationary`: fixed wind, goal, reward, and map;
+- `seasonal_wind`: the wind direction and reward multiplier cycle with a fixed period;
+- `moving_goal`: the goal moves slowly back and forth along a fixed serpentine trajectory, skipping trajectory points occupied by obstacles;
+- `hidden_context`: the obstacle map switches periodically, but the map-mode identifier is not provided to the agent;
+- `combined`: enables all three types of change described above at the same time.
+
+The map generator guarantees that all valid cells remain connected. In the interface, an obstacle can be moved by first clicking the obstacle and then clicking an empty cell. Any modification that breaks connectivity is rejected.
+
+## Launching the Graphical Interface
+
+Python must be installed with Tk support. After installing the dependencies, run the following command from the repository root:
 
 ```powershell
 python run_gui.py
 ```
 
-面板支持：
+The interface supports:
 
-- 环境、奖励、调度周期和算法超参数设置；
-- 地图生成、上下文地图预览和障碍物手动移动；
-- 开始、暂停、继续、手动保存、停止并保存；
-- checkpoint 加载并精确续训；
-- 网格、平均奖励、目标到达率、碰撞率、TD error 和 TIDBD 步长实时显示。
+- configuration of the environment, rewards, scheduling periods, and algorithm hyperparameters;
+- map generation, contextual-map previews, and manual obstacle relocation;
+- start, pause, resume, manual save, and stop-and-save operations;
+- checkpoint loading and exact training resumption;
+- real-time visualization of the grid, average reward, goal-reaching rate, collision rate, TD error, and TIDBD step sizes.
 
-训练在后台线程中执行，GUI 不参与智能体观测。
+Training runs in a background thread, and the GUI is not part of the agent's observation.
 
-## 无图形界面运行
+## Running Without the Graphical Interface
 
-运行固定步数：
+Run for a fixed number of steps:
 
 ```powershell
 python -m stream_rl_grid.cli --profile combined --steps 50000
 ```
 
-无限运行，人工按 `Ctrl+C` 停止并自动保存：
+Run indefinitely, then press `Ctrl+C` to stop and save automatically:
 
 ```powershell
 python -m stream_rl_grid.cli --profile combined --steps 0
 ```
 
-精确续训：
+Resume training exactly:
 
 ```powershell
 python -m stream_rl_grid.cli --resume checkpoints/<run-id>/step-000000050000.pkl --steps 0
 ```
 
-固定步长基线：
+Run the fixed-step-size baseline:
 
 ```powershell
 python -m stream_rl_grid.cli --profile stationary --fixed-alpha --steps 50000
 ```
 
-## 多随机种子验证
+## Multi-Seed Evaluation
 
-比较 TIDBD 与固定步长 Differential Sarsa：
+Compare TIDBD with fixed-step-size Differential Sarsa:
 
 ```powershell
 python -m stream_rl_grid.benchmark --steps 50000 --seeds 0 1 2 3 4
 ```
 
-输出包括逐运行 CSV、均值学习曲线和 95% 正态近似置信区间。主要指标是滑动窗口平均奖励，不使用 episode return。
+The outputs include a CSV file for each run, the mean learning curve, and a 95% normal-approximation confidence interval. The primary metric is the moving-window average reward; episode return is not used.
 
-## Checkpoint 内容
+## Checkpoint Contents
 
-checkpoint 不只保存 `w`，还保存：
+A checkpoint stores more than just `w`. It also contains:
 
-- `w, beta, H, z, R_bar`；
-- 当前观测和已经选好的下一动作；
-- 环境位置、目标、地图、风/奖励/地图调度相位；
-- 延迟激活障碍物；
-- IHT 字典与碰撞计数；
-- Python 和 NumPy 随机数状态；
-- 滑动指标、曲线、配置和格式版本。
+- `w, beta, H, z, R_bar`;
+- the current observation and the already selected next action;
+- the environment position, goal, map, and wind/reward/map scheduling phases;
+- deferred obstacle activations;
+- the IHT dictionary and collision count;
+- the Python and NumPy random-number-generator states;
+- moving metrics, curves, configuration, and format version.
 
-保存采用临时文件 + 原子替换，避免中断时留下半个 checkpoint。
+Saving uses a temporary file followed by an atomic replacement, preventing an interrupted save from leaving behind a partial checkpoint.
 
-## 测试
+## Tests
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
-
-## Algorithm and environment configuration
-
-Algorithms share the interface in `stream_rl_grid/algo/base.py` and are selected with
-`AgentConfig.algorithm` (`"tidbd"` or `"sarsa"`). The GUI exposes the same selector.
-The policy shown by the GUI is a frozen `(height, width, 5)` epsilon-greedy probability
-matrix built from the current learned parameters; it is separate from the action sampled
-by the online behavior loop.
-
-Default maps can be authored directly in `EnvironmentConfig` with
-`obstacle_coordinates`, `start_position`, and `goal_position`. Wind is probabilistic:
-`w_strength=0.3` means a 30% chance of one additional cell of displacement in the selected
-wind direction on each transition.
-
-测试覆盖 continuing 目标传送、碰撞回退、`stay` 的风效应、地图切换延迟障碍物、TIDBD 数值有限性，以及 checkpoint 后逐状态/逐动作/逐权重的精确续训。
