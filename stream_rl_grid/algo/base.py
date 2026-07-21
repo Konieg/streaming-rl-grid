@@ -47,6 +47,10 @@ class BaseControlAgent(ABC):
             [self.value(observation, action, readonly=readonly) for action in range(5)], dtype=np.float64
         )
 
+    def bootstrap_value(self, next_observation: Sequence[int], next_action: int) -> float:
+        """Return the next-state control target used by a concrete algorithm."""
+        return self.value(next_observation, next_action, readonly=False)
+
     def probabilities_from_values(self, values: Sequence[float]) -> np.ndarray:
         values = np.asarray(values, dtype=np.float64)
         best = np.flatnonzero(np.isclose(values, values.max(), rtol=1e-12, atol=1e-12))

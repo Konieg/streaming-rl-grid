@@ -303,7 +303,7 @@ class TrainingPanel:
             effective_initial_step=float(self.variables["effective_initial_step"].get()),
             reward_rate_step=float(self.variables["reward_rate_step"].get()),
             beta_min=float(self.variables["beta_min"].get()), beta_max=float(self.variables["beta_max"].get()),
-            use_tidbd=self.variables["algorithm"].get() == "tidbd",
+            use_tidbd=self.variables["algorithm"].get() in ("tidbd", "expected_sarsa_tidbd"),
             adaptive_epsilon_kappa=float(self.variables["adaptive_epsilon_kappa"].get()),
             adaptive_epsilon_min=float(self.variables["adaptive_epsilon_min"].get()),
             adaptive_epsilon_max=float(self.variables["adaptive_epsilon_max"].get()),

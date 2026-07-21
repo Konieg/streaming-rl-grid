@@ -8,7 +8,7 @@ from .trainer import Trainer
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Streaming differential Sarsa(lambda) + TIDBD")
+    parser = argparse.ArgumentParser(description="Streaming differential Sarsa control algorithms")
     parser.add_argument("--resume", type=str, help="Checkpoint to continue exactly")
     parser.add_argument("--profile", choices=PROFILES, default="combined")
     parser.add_argument("--steps", type=int, default=0, help="0 means run until Ctrl+C")
@@ -18,7 +18,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--obstacles", type=int, default=8)
     parser.add_argument("--algorithm", choices=ALGORITHMS, default="tidbd")
     parser.add_argument("--representation", choices=REPRESENTATIONS, default="tabular-one-hot")
-    parser.add_argument("--fixed-alpha", action="store_true", help="Disable TIDBD baseline")
+    parser.add_argument(
+        "--fixed-alpha", action="store_true", help="Force the fixed-step Sarsa baseline"
+    )
     parser.add_argument("--epsilon-kappa", type=float, default=0.01)
     parser.add_argument("--epsilon-min", type=float, default=0.02)
     parser.add_argument("--epsilon-max", type=float, default=0.30)
@@ -44,7 +46,7 @@ def main() -> None:
         config.environment.obstacle_coordinates = None
         config.agent.algorithm = "sarsa" if args.fixed_alpha else args.algorithm
         config.agent.representation = args.representation
-        config.agent.use_tidbd = config.agent.algorithm == "tidbd"
+        config.agent.use_tidbd = config.agent.algorithm in ("tidbd", "expected_sarsa_tidbd")
         config.agent.adaptive_epsilon_kappa = args.epsilon_kappa
         config.agent.adaptive_epsilon_min = args.epsilon_min
         config.agent.adaptive_epsilon_max = args.epsilon_max

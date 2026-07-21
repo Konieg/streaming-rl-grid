@@ -21,10 +21,10 @@ class DifferentialSarsaTIDBD(BaseControlAgent):
 
     def update(self, observation, action, reward, next_observation, next_action) -> float:
         active = self.features.active(observation, action)
-        next_active = self.features.active(next_observation, next_action)
         delta = float(
             reward - self.reward_rate
-            + self.weights[next_active].sum() - self.weights[active].sum()
+            + self.bootstrap_value(next_observation, next_action)
+            - self.weights[active].sum()
         )
         self.trace *= self.config.lambda_
         self.trace[active] = 1.0

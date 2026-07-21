@@ -6,7 +6,14 @@ from typing import Any, Dict, List, Optional
 
 PROFILES = ("stationary", "seasonal_wind", "moving_goal", "hidden_context", "combined", "customize")
 WIND_CHOICES = ("auto", "up", "right", "down", "left", "none")
-ALGORITHMS = ("tidbd", "sarsa", "true_online_sarsa", "adaptive_epsilon_sarsa")
+ALGORITHMS = (
+    "tidbd",
+    "sarsa",
+    "true_online_sarsa",
+    "adaptive_epsilon_sarsa",
+    "expected_sarsa",
+    "expected_sarsa_tidbd",
+)
 REPRESENTATIONS = ("tabular-one-hot", "sparse-factorized")
 
 
