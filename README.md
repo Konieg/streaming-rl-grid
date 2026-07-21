@@ -24,7 +24,7 @@ $$delta = reward - R_bar + Q(next_state, next_action) - Q(state, action)$$
 
 平均奖励估计为：
 
-$$ R_bar = R_bar + eta * delta $$
+$$ R_bar <- R_bar + eta * delta $$
 
 资格迹采用 replacing traces：
 
