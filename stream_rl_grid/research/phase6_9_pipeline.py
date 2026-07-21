@@ -452,6 +452,14 @@ def aggregate_results(results, summary: Path):
     # auxiliary diagnostic.  Recompute it from the unambiguous higher-reward
     # goal so cached runs remain comparable without changing any training data.
     for run in results:
+        interval_rewards = np.asarray([
+            point["interval_average_reward"] for point in run["curves"]
+        ], dtype=np.float64)
+        for index, point in enumerate(run["curves"]):
+            point["rolling_average_reward_500"] = (
+                float(np.mean(interval_rewards[index - 4:index + 1]))
+                if index >= 4 else float("nan")
+            )
         for point in run["curves"]:
             goal_total = point["goal_a_count"] + point["goal_b_count"]
             higher_reward_count = (
@@ -578,6 +586,8 @@ def aggregate_results(results, summary: Path):
                     "step": point["step"], "phase": point["phase"], "n": len(runs),
                 }
                 for metric in (
+                    "interval_average_reward", "rolling_average_reward_500",
+                    "stream_average_reward",
                     "exact_policy_gain", "oracle_gain", "dynamic_regret",
                     "normalized_dynamic_regret", "model_error",
                     "preferred_goal_fraction", "true_wind_probability",
@@ -689,6 +699,65 @@ def make_plots(results, aggregate, summary):
     axis.set_xlabel("Real environment steps"); axis.set_ylabel("Wind probability")
     axis.grid(alpha=0.2); axis.legend(); fig.tight_layout()
     fig.savefig(summary / "wind_factor_tracking.png", dpi=180); plt.close(fig)
+
+    for metric, filename, ylabel in (
+        (
+            "rolling_average_reward_500", "rolling_average_reward_curves.png",
+            "Trailing-500 average reward",
+        ),
+        (
+            "stream_average_reward", "cumulative_average_reward_curves.png",
+            "Cumulative stream average reward",
+        ),
+    ):
+        fig, axes = plt.subplots(2, 2, figsize=(14, 9), sharex=False)
+        for axis, scenario in zip(axes.flat, phase6_scenarios()):
+            for method in METHOD_ORDER:
+                runs = [
+                    row for row in results
+                    if row["scenario"] == scenario.name and row["method"] == method
+                ]
+                steps = np.asarray([point["step"] for point in runs[0]["curves"]])
+                values = np.asarray([
+                    [point.get(metric, np.nan) for point in run["curves"]]
+                    for run in runs
+                ], dtype=np.float64)
+                valid_n = np.sum(np.isfinite(values), axis=0)
+                mean = np.divide(
+                    np.nansum(values, axis=0), valid_n,
+                    out=np.full(values.shape[1], np.nan), where=valid_n > 0,
+                )
+                centered = values - mean
+                squared = np.nansum(centered * centered, axis=0)
+                sample_std = np.sqrt(np.divide(
+                    squared, valid_n - 1,
+                    out=np.full(values.shape[1], np.nan), where=valid_n > 1,
+                ))
+                ci = 1.96 * sample_std / np.sqrt(valid_n)
+                axis.plot(
+                    steps, mean, label=METHOD_LABELS[method],
+                    color=COLORS[method], linewidth=1.35,
+                )
+                axis.fill_between(
+                    steps, mean - ci, mean + ci,
+                    color=COLORS[method], alpha=0.07,
+                )
+            for change in scenario.change_steps:
+                axis.axvline(change, color="black", linestyle=":", linewidth=0.8)
+            if scenario.local_window is not None:
+                axis.axvspan(
+                    scenario.local_window[0], scenario.local_window[1],
+                    color="black", alpha=0.05,
+                )
+            axis.set_title(scenario.name)
+            axis.set_xlabel("Real environment steps")
+            axis.set_ylabel(ylabel)
+            axis.grid(alpha=0.2)
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="upper center", ncol=5, fontsize=8)
+        fig.tight_layout(rect=(0, 0, 1, 0.92))
+        fig.savefig(summary / filename, dpi=180)
+        plt.close(fig)
 
 
 def conclusions_markdown(aggregate, paired, ablations):

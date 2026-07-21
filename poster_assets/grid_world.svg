@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#44546a"/>
+    </marker>
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M60 0 L0 0 0 60" fill="none" stroke="#cbd5e1" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="900" height="560" fill="white"/>
+  <text x="30" y="35" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#172033">Continuing Two-Goal / Two-Corridor Grid</text>
+  <g transform="translate(35,70)">
+    <rect x="0" y="0" width="420" height="420" fill="#f8fafc" stroke="#334155" stroke-width="3"/>
+    <rect x="0" y="0" width="60" height="420" fill="#dbeafe"/>
+    <rect x="0" y="0" width="420" height="420" fill="url(#grid)"/>
+    <g fill="#334155">
+      <rect x="180" y="0" width="60" height="60"/>
+      <rect x="180" y="120" width="60" height="60"/>
+      <rect x="180" y="180" width="60" height="60"/>
+      <rect x="180" y="240" width="60" height="60"/>
+      <rect x="180" y="360" width="60" height="60"/>
+    </g>
+    <rect x="360" y="60" width="60" height="60" rx="10" fill="#f59e0b" stroke="#92400e" stroke-width="3"/>
+    <text x="390" y="86" text-anchor="middle" font-family="Arial" font-weight="700" font-size="18">Goal A</text>
+    <text x="390" y="108" text-anchor="middle" font-family="Arial" font-size="15">reward A</text>
+    <rect x="360" y="300" width="60" height="60" rx="10" fill="#8b5cf6" stroke="#5b21b6" stroke-width="3"/>
+    <text x="390" y="326" text-anchor="middle" font-family="Arial" font-weight="700" font-size="18" fill="white">Goal B</text>
+    <text x="390" y="348" text-anchor="middle" font-family="Arial" font-size="15" fill="white">reward B</text>
+    <line x1="180" y1="62" x2="180" y2="118" stroke="#dc2626" stroke-width="7" stroke-dasharray="8,6"/>
+    <text x="210" y="96" font-family="Arial" font-size="15" fill="#dc2626">dynamic edge</text>
+    <path d="M95 205 C145 170, 155 95, 340 90" fill="none" stroke="#f59e0b" stroke-width="5" marker-end="url(#arrow)"/>
+    <path d="M95 215 C145 255, 155 330, 340 330" fill="none" stroke="#7c3aed" stroke-width="5" marker-end="url(#arrow)"/>
+    <circle cx="75" cy="210" r="20" fill="#2563eb" stroke="white" stroke-width="3"/>
+    <text x="75" y="217" text-anchor="middle" font-family="Arial" font-size="21" font-weight="700" fill="white">S</text>
+    <text x="30" y="447" font-family="Arial" font-size="16" fill="#1e40af">Uniform restart region after every goal (no termination)</text>
+  </g>
+  <g transform="translate(500,82)" font-family="Arial, sans-serif">
+    <text x="0" y="0" font-size="22" font-weight="700" fill="#172033">What can change?</text>
+    <circle cx="14" cy="45" r="8" fill="#f59e0b"/><text x="34" y="52" font-size="18">Goal-specific reward heads</text>
+    <circle cx="14" cy="90" r="8" fill="#dc2626"/><text x="34" y="97" font-size="18">Local corridor availability</text>
+    <circle cx="14" cy="135" r="8" fill="#2563eb"/><text x="34" y="142" font-size="18">Global categorical wind</text>
+    <path d="M20 170 L20 220" stroke="#2563eb" stroke-width="5" marker-end="url(#arrow)"/>
+    <text x="50" y="202" font-size="17">extra displacement with probability p</text>
+    <text x="0" y="265" font-size="22" font-weight="700" fill="#172033">Continuing rewards</text>
+    <text x="0" y="302" font-size="18">Ordinary transition: −0.05</text>
+    <text x="0" y="336" font-size="18">Collision: −0.25</text>
+    <text x="0" y="370" font-size="18">Goal: context-dependent (+1 to +6)</text>
+    <text x="0" y="418" font-size="17" font-style="italic" fill="#475569">42 states × 5 actions; no episode boundary</text>
+  </g>
+</svg>
