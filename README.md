@@ -2,7 +2,7 @@
 
 一个面向持续学习实验的 Windy Grid World：每个转移只使用一次、没有 replay buffer、没有 batch、没有 episode 终止。智能体采用：
 
-**Streaming Differential Sarsa(λ) + replacing traces + 双组 tile coding + TIDBD**。
+**Streaming Differential Sarsa(λ) + replacing traces + 两组feature representation (tile coding and polynomials) + TIDBD**。
 
 项目参考了：
 
@@ -24,7 +24,7 @@ $$delta = reward - R_bar + Q(next_state, next_action) - Q(state, action)$$
 
 平均奖励估计为：
 
-$$ R_bar <- R_bar + eta * delta $$
+$$ R_bar = R_bar + eta * delta $$
 
 资格迹采用 replacing traces：
 
