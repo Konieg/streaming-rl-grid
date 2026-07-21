@@ -7,3 +7,5 @@ checkpoints/
 runs/
 benchmark_results/
 *.log
+.idea/
+.vscode/
